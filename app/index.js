@@ -649,25 +649,54 @@ app.post('/api/invite/:roomId/regenerate', verifyToken, async (req, res) => {
 // ── AI ────────────────────────────────────────────
 app.post('/api/ai/chat', verifyToken, async (req, res) => {
   try {
-    const { prompt, context } = req.body;
-    if (!prompt) return res.status(400).json({ error: 'Prompt required' });
+    const { prompt, context, attachment } = req.body;
+    if (!prompt && !attachment) return res.status(400).json({ error: 'Prompt required' });
 
-    const fullPrompt = context
-      ? `You are an AI coding assistant in a developer chat room.\nContext:\n${context}\n\nUser asks: ${prompt}`
-      : `You are an AI coding assistant in a developer chat room. Keep answers concise.\n\n${prompt}`;
+    let contents;
+
+    if (attachment?.type === 'image' && attachment?.url) {
+      // Fetch image and send as inline data to Gemini
+      const imgRes = await fetch(attachment.url);
+      const imgBuffer = await imgRes.arrayBuffer();
+      const base64 = Buffer.from(imgBuffer).toString('base64');
+      const mimeType = imgRes.headers.get('content-type') || 'image/png';
+
+      contents = [{
+        role: 'user',
+        parts: [
+          { text: prompt || 'Describe this image.' },
+          { inlineData: { mimeType, data: base64 } }
+        ]
+      }];
+
+    } else if (attachment?.type === 'pdf' && attachment?.url) {
+      // For PDF — tell AI the URL and ask it to reason about it
+      contents = [{
+        role: 'user',
+        parts: [{ text: `${prompt || 'Summarize this PDF.'}\n\nPDF file: ${attachment.url}\nFile name: ${attachment.name}` }]
+      }];
+
+    } else {
+      const fullPrompt = context
+        ? `You are an AI coding assistant in a developer chat room.\nContext:\n${context}\n\nUser asks: ${prompt}`
+        : `You are an AI coding assistant in a developer chat room. Keep answers concise.\n\n${prompt}`;
+      contents = fullPrompt;
+    }
 
     const response = await genai.models.generateContent({
       model: 'gemini-2.5-flash',
-      contents: fullPrompt
+      contents
     });
 
     const raw = response.text;
     const html = marked.parse(raw);
     res.json({ reply: raw, replyHtml: html });
   } catch (err) {
+    console.error('AI chat error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
+
 
 app.post('/api/ai/private/stream', verifyToken, async (req, res) => {
   const { prompt, history } = req.body;

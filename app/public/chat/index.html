@@ -1862,6 +1862,7 @@
         let files = [];
         let activeFileId = null;
         let typingTimer = null;
+        let pendingAttachment = null;
 
         // ─────────────────────────────────────────────
         //  HELPERS
@@ -2437,7 +2438,9 @@
         window.sendMessage = async () => {
             const inp = document.getElementById('chat-input');
             const text = inp.value.trim();
-            if (!text) return;
+
+            // Must have text OR attachment
+            if (!text && !pendingAttachment) return;
 
             clearTimeout(typingTimer);
             const token = await getToken();
@@ -2448,6 +2451,9 @@
             inp.value = '';
             inp.style.height = 'auto';
             document.getElementById('send-btn').disabled = true;
+
+            const attachment = pendingAttachment;
+            window.cancelAttachment(); // clear preview bar
 
             try {
                 const msgData = {
@@ -2460,14 +2466,12 @@
                     edited: false
                 };
                 if (replyTo) { msgData.replyTo = replyTo; cancelReply(); }
+                if (attachment) { msgData.attachment = attachment; }
 
-                const ref = await addDoc(
-                    collection(db, 'rooms', roomId, 'messages'),
-                    msgData
-                );
+                const ref = await addDoc(collection(db, 'rooms', roomId, 'messages'), msgData);
 
                 if (text.toLowerCase().includes('@ai')) {
-                    handleAIMention(ref.id, text);
+                    handleAIMention(ref.id, text, attachment); // pass attachment
                 }
             } catch (err) {
                 showToast('Failed to send: ' + err.message, 'error');
@@ -2476,14 +2480,14 @@
             }
         };
 
-        async function handleAIMention(triggerMsgId, text) {
+        async function handleAIMention(triggerMsgId, text, attachment = null) {
             try {
                 const prompt = text.replace(/@ai\b/gi, '').trim();
                 const token = await getToken();
                 const res = await fetch('/api/ai/chat', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                    body: JSON.stringify({ prompt, roomId })
+                    body: JSON.stringify({ prompt, roomId, attachment }) // ← pass attachment
                 });
                 const data = await res.json();
                 if (!res.ok) throw new Error(data.error);
@@ -3061,7 +3065,7 @@
             e.target.value = '';
             if (!file) return;
 
-            const MAX = 20 * 1024 * 1024; // 20MB
+            const MAX = 20 * 1024 * 1024;
             if (file.size > MAX) { showToast('Max file size is 20MB.', 'error'); return; }
 
             const type =
@@ -3075,17 +3079,14 @@
 
             try {
                 const token = await getToken();
-
-                // 1. Get signed URL
                 const res = await fetch(`/api/rooms/${roomId}/upload`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                     body: JSON.stringify({ fileName: file.name, contentType: file.type })
                 });
-                const { uploadUrl, publicUrl } = await res.json();
+                const { uploadUrl, publicUrl, filePath } = await res.json();
                 if (!res.ok) throw new Error('Failed to get upload URL');
 
-                // 2. Upload directly to Firebase Storage
                 const upload = await fetch(uploadUrl, {
                     method: 'PUT',
                     headers: { 'Content-Type': file.type },
@@ -3093,23 +3094,49 @@
                 });
                 if (!upload.ok) throw new Error('Upload failed');
 
-                // 3. Save message to Firestore
-                await addDoc(collection(db, 'rooms', roomId, 'messages'), {
-                    uid: currentUser.uid,
-                    displayName: currentUser.displayName || '',
-                    photoURL: currentUser.photoURL || '',
-                    text: '',
-                    attachment: { type, url: publicUrl, name: file.name },
-                    createdAt: serverTimestamp(),
-                    deleted: false,
-                    edited: false
-                });
+                // Store pending — don't send yet
+                pendingAttachment = { type, url: publicUrl, name: file.name, filePath };
+                showAttachmentPreview(pendingAttachment);
+                showToast('File ready — add a message and hit Send.', 'success');
+                document.getElementById('chat-input').focus();
 
-                showToast('File sent!', 'success');
             } catch (err) {
                 showToast('Upload failed: ' + err.message, 'error');
             }
         };
+
+        function showAttachmentPreview({ type, url, name }) {
+            let existing = document.getElementById('attachment-preview-bar');
+            if (existing) existing.remove();
+
+            const icon =
+                type === 'image' ? 'fa-image' :
+                    type === 'video' ? 'fa-film' : 'fa-file-pdf';
+
+            const bar = document.createElement('div');
+            bar.id = 'attachment-preview-bar';
+            bar.style.cssText =
+                'display:flex;align-items:center;gap:10px;padding:6px 14px;' +
+                'background:var(--bg3);border-top:1px solid var(--border);' +
+                'font-size:12px;color:var(--text);';
+            bar.innerHTML = `
+    <i class="fa-solid ${icon}" style="color:var(--indigo2);"></i>
+    <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(name)}</span>
+    <button onclick="window.cancelAttachment()"
+      style="background:none;border:none;cursor:pointer;color:var(--muted2);font-size:13px;padding:0 4px;"
+      title="Remove attachment">
+      <i class="fa-solid fa-xmark"></i>
+    </button>`;
+
+            const inputArea = document.getElementById('chat-input-area');
+            inputArea.parentElement.insertBefore(bar, inputArea);
+        }
+
+        window.cancelAttachment = () => {
+            pendingAttachment = null;
+            document.getElementById('attachment-preview-bar')?.remove();
+        };
+
 
         // ─────────────────────────────────────────────
         //  INIT ROOM
