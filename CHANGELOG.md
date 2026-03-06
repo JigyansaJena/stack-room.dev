@@ -126,3 +126,31 @@ Initial release.
 - AI code review on PR submission
 - Message reactions
 - Message search
+
+---
+
+## [1.0.1] — 2026-03-06
+
+### Fixed
+
+**Pull Request Emails**
+- `fileName is not defined` error in `POST /api/rooms/:roomId/files` — now correctly reads `fileName` from `req.body` before use
+- `fileName is not defined` error in `PATCH /api/rooms/:roomId/files/:fileId` — now extracted from Firestore (`fileSnap.data().fileName`) before the PR document is written
+- Email block in both routes was referencing `fileSnap` which didn't exist in the POST route
+- PR email failures no longer block the API response — emails are now sent after `res.json()` using `.catch()`
+
+**Email / SMTP**
+- Switched from inline Gmail transport to configurable SMTP via environment variables (`MAIL_HOST`, `MAIL_PORT`, `MAIL_SECURE`, `MAIL_USER`, `MAIL_PASS`, `MAIL_FROM`)
+- Fixed SSL wrong version number error — `MAIL_SECURE=false` on port 587 now correctly uses STARTTLS instead of raw SSL
+- Added `tls.rejectUnauthorized: false` option for shared hosting with self-signed certificates
+
+**Real-time Updates**
+- File tree and PR panel no longer require a page refresh to reflect changes
+- Replaced one-time `loadFiles()` and `loadPRs()` calls with persistent Firestore `onSnapshot` listeners (`subscribeFiles`, `subscribePRs`)
+- Editor content now auto-syncs when an admin approves a PR for the currently open file (only if editor has no unsaved changes)
+- `unsubFiles` and `unsubPRs` listeners are properly torn down on sign out
+
+### Refactored
+
+- Extracted duplicate PR email logic from both file routes into a shared `notifyAdmins()` helper
+- Added `editorDirty` flag to prevent live PR-approval sync from overwriting unsaved editor content

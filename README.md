@@ -317,7 +317,10 @@ The client listens to the `typing` collection with `onSnapshot`. When the snapsh
 ## Environment Variables
 
 ```env
-# Firebase Client SDK (these are public — safe to expose in /api/config)
+PORT=3000
+APP_URL=https://yourdomain.com
+
+
 FIREBASE_API_KEY=
 FIREBASE_AUTH_DOMAIN=
 FIREBASE_PROJECT_ID=
@@ -325,11 +328,18 @@ FIREBASE_STORAGE_BUCKET=
 FIREBASE_MESSAGING_SENDER_ID=
 FIREBASE_APP_ID=
 
-# Google Gemini
+FIREBASE_CLIENT_EMAIL=
+FIREBASE_PRIVATE_KEY=
+
 GEMINI_API_KEY=
 
-# Server
-PORT=3000
+
+MAIL_HOST=mail.yourdomain.com
+MAIL_PORT=587
+MAIL_SECURE=false
+MAIL_USER=noreply@yourdomain.com
+MAIL_PASS=your-email-password
+MAIL_FROM=StackRoom <noreply@yourdomain.com>
 ```
 
 `service-account.json` is required separately — place it at the root alongside `index.js`. Download it from Firebase Console under Project Settings > Service Accounts.
