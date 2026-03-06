@@ -1830,7 +1830,8 @@
             getFirestore,
             doc, collection,
             onSnapshot, addDoc, updateDoc, deleteDoc,
-            query, orderBy, limit, serverTimestamp, getDoc
+            query, orderBy, limit, startAfter,
+            serverTimestamp, getDoc, getDocs
         } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
         // ── Init ──────────────────────────────────────
@@ -1863,6 +1864,10 @@
         let activeFileId = null;
         let typingTimer = null;
         let pendingAttachment = null;
+        let oldestMessageSnap = null;
+        let loadingOlderMsgs = false;
+        let noMoreMessages = false;
+        let initialLoadDone = false;
 
         // ─────────────────────────────────────────────
         //  HELPERS
@@ -2343,21 +2348,42 @@
         function subscribeMessages() {
             const q = query(
                 collection(db, 'rooms', roomId, 'messages'),
-                orderBy('createdAt', 'asc'),
-                limit(100)
+                orderBy('createdAt', 'desc'),
+                limit(50)
             );
+
             unsubMessages = onSnapshot(q, (snap) => {
+
+                // Initial load — runs once
+                if (!initialLoadDone) {
+                    initialLoadDone = true;
+
+                    const msgs = snap.docs.map(d => ({ id: d.id, ...d.data() })).reverse();
+                    msgs.forEach(m => appendMessage(m));
+
+                    if (snap.docs.length > 0) {
+                        oldestMessageSnap = snap.docs[snap.docs.length - 1];
+                    }
+                    if (snap.docs.length < 50) noMoreMessages = true;
+
+                    // Instant jump — no scroll animation on first load
+                    const el = document.getElementById('messages');
+                    el.scrollTop = el.scrollHeight;
+                    return;
+                }
+
+                // After initial load — handle realtime changes only
                 snap.docChanges().forEach(change => {
                     if (change.type === 'added') {
-                        appendMessage({ id: change.doc.id, ...change.doc.data() });
-                        const isOwn = change.doc.data().uid === currentUser?.uid;
-                        scrollToBottom(isOwn); // force scroll for own messages
+                        const msg = { id: change.doc.id, ...change.doc.data() };
+                        appendMessage(msg);
+                        scrollToBottom(msg.uid === currentUser?.uid);
                     }
                     if (change.type === 'modified') updateMessageEl(change.doc.id, change.doc.data());
                     if (change.type === 'removed') document.getElementById(`msg-${change.doc.id}`)?.remove();
                 });
-            });
 
+            });
         }
 
         // ─────────────────────────────────────────────
@@ -2520,6 +2546,82 @@
             } catch (err) {
                 showToast('AI error: ' + err.message, 'error');
             }
+        }
+
+        async function loadOlderMessages() {
+            if (loadingOlderMsgs || noMoreMessages || !oldestMessageSnap) return;
+            loadingOlderMsgs = true;
+
+            const container = document.getElementById('messages');
+
+            // Show loader at top
+            let loader = document.getElementById('older-msgs-loader');
+            if (!loader) {
+                loader = document.createElement('div');
+                loader.id = 'older-msgs-loader';
+                loader.innerHTML = `<i class="fa-solid fa-spinner fa-spin" style="color:var(--muted2);font-size:13px;"></i>`;
+                loader.style.cssText =
+                    'text-align:center;padding:10px;opacity:0.6;';
+                container.prepend(loader);
+            }
+
+            try {
+                const q = query(
+                    collection(db, 'rooms', roomId, 'messages'),
+                    orderBy('createdAt', 'desc'),
+                    startAfter(oldestMessageSnap),
+                    limit(50)
+                );
+                const snap = await getDocs(q);
+
+                loader.remove();
+
+                if (snap.empty) {
+                    noMoreMessages = true;
+                    showEndOfChat();
+                    return;
+                }
+
+                // Save scroll height before prepending
+                const prevScrollHeight = container.scrollHeight;
+
+                const msgs = snap.docs.map(d => ({ id: d.id, ...d.data() })).reverse();
+                msgs.forEach(m => prependMessage(m));
+
+                // Restore scroll position
+                container.scrollTop += container.scrollHeight - prevScrollHeight;
+
+                oldestMessageSnap = snap.docs[snap.docs.length - 1];
+                if (snap.docs.length < 50) {
+                    noMoreMessages = true;
+                    showEndOfChat();
+                }
+            } catch (err) {
+                loader?.remove();
+                showToast('Failed to load older messages.', 'error');
+            } finally {
+                loadingOlderMsgs = false;
+            }
+        }
+
+        function prependMessage(msg) {
+            const container = document.getElementById('messages');
+            if (document.getElementById(`msg-${msg.id}`)) return;
+            const div = document.createElement('div');
+            div.innerHTML = buildMsgHTML(msg);
+            const el = div.firstElementChild;
+            container.prepend(el);
+            el.querySelectorAll('pre code').forEach(b => hljs.highlightElement(b));
+        }
+
+        function showEndOfChat() {
+            const container = document.getElementById('messages');
+            if (document.getElementById('chat-beginning')) return;
+            const el = document.createElement('div');
+            el.id = 'chat-beginning';
+            el.style.cssText = 'text-align:center;padding:16px;font-size:11px;color:var(--muted2);';
+            el.innerHTML = '<i class="fa-solid fa-flag-checkered mr-1"></i>Beginning of chat';
+            container.prepend(el);
         }
 
         // ─────────────────────────────────────────────
@@ -3180,11 +3282,17 @@
                 renderMembers();
                 setLoaderMsg('Connecting...');
 
-                // All four realtime listeners — nothing needs manual reload
                 subscribeMessages();
+                const msgContainer = document.getElementById('messages');
+                msgContainer.addEventListener('scroll', () => {
+                    if (msgContainer.scrollTop < 80) {
+                        loadOlderMessages();
+                    }
+                });
+
                 subscribeTyping();
-                subscribeFiles();   // ← replaces loadFiles()
-                subscribePRs();     // ← replaces loadPRs()
+                subscribeFiles();
+                subscribePRs();
 
                 // Init editor (no loadFiles call inside — subscribeFiles handles it)
                 initEditor();
