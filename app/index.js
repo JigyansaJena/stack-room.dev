@@ -1,16 +1,16 @@
 require('dotenv').config();
 
-const express    = require('express');
-const cors       = require('cors');
-const path       = require('path');
-const admin      = require('firebase-admin');
+const express = require('express');
+const cors = require('cors');
+const path = require('path');
+const admin = require('firebase-admin');
 const { GoogleGenAI } = require('@google/genai');
 const { marked } = require('marked');
 const nodemailer = require('nodemailer');
 
 const mailer = nodemailer.createTransport({
-  host:   process.env.MAIL_HOST,
-  port:   parseInt(process.env.MAIL_PORT) || 587,
+  host: process.env.MAIL_HOST,
+  port: parseInt(process.env.MAIL_PORT) || 587,
   secure: process.env.MAIL_SECURE === 'true',
   auth: {
     user: process.env.MAIL_USER,
@@ -18,8 +18,8 @@ const mailer = nodemailer.createTransport({
   }
 });
 
-const app    = express();
-const genai  = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+const app = express();
+const genai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 marked.setOptions({ breaks: true, gfm: true });
 
@@ -31,12 +31,12 @@ app.use(express.static(path.join(__dirname, './public')));
 const serviceAccount = require('./service-account.json');
 if (!admin.apps.length) {
   admin.initializeApp({
-    credential:    admin.credential.cert(serviceAccount),
+    credential: admin.credential.cert(serviceAccount),
     storageBucket: process.env.FIREBASE_STORAGE_BUCKET
   });
 }
 
-const db     = admin.firestore();
+const db = admin.firestore();
 const bucket = admin.storage().bucket();
 
 const verifyToken = async (req, res, next) => {
@@ -53,7 +53,7 @@ const verifyToken = async (req, res, next) => {
 const optionalAuth = async (req, res, next) => {
   const token = req.headers.authorization?.split('Bearer ')[1];
   if (token) {
-    try { req.user = await admin.auth().verifyIdToken(token); } catch {}
+    try { req.user = await admin.auth().verifyIdToken(token); } catch { }
   }
   next();
 };
@@ -64,7 +64,7 @@ function genInviteCode() {
 
 async function sendPREmail({ adminEmail, adminName, submitterName, fileName, type, roomName, prId, roomId }) {
   const actionLabel = type === 'create' ? 'New file' : 'Edit to existing file';
-  const reviewUrl   = `${process.env.APP_URL}/chat/?room=${roomId}`;
+  const reviewUrl = `${process.env.APP_URL}/chat/?room=${roomId}`;
 
   const html = `
     <div style="font-family:monospace;max-width:520px;margin:0 auto;background:#0f0f14;color:#e2e8f0;padding:32px;border-radius:12px;">
@@ -95,17 +95,17 @@ async function sendPREmail({ adminEmail, adminName, submitterName, fileName, typ
     </div>`;
 
   await mailer.sendMail({
-    from:    process.env.MAIL_FROM,
-    to:      adminEmail,
+    from: process.env.MAIL_FROM,
+    to: adminEmail,
     subject: `[StackRoom] New PR from ${submitterName} — ${fileName}`,
     html
   });
 }
 
 async function notifyAdmins({ roomId, submitterName, fileName, type, prId }) {
-  const roomSnap   = await db.collection('rooms').doc(roomId).get();
-  const roomData   = roomSnap.data();
-  const adminUids  = Object.entries(roomData.members || {})
+  const roomSnap = await db.collection('rooms').doc(roomId).get();
+  const roomData = roomSnap.data();
+  const adminUids = Object.entries(roomData.members || {})
     .filter(([_, m]) => m.role === 'admin').map(([uid]) => uid);
   const adminSnaps = await Promise.all(
     adminUids.map(uid => db.collection('users').doc(uid).get())
@@ -114,12 +114,12 @@ async function notifyAdmins({ roomId, submitterName, fileName, type, prId }) {
     adminSnaps
       .filter(s => s.exists && s.data().email)
       .map(s => sendPREmail({
-        adminEmail:    s.data().email,
-        adminName:     s.data().displayName || '',
+        adminEmail: s.data().email,
+        adminName: s.data().displayName || '',
         submitterName,
         fileName,
         type,
-        roomName:      roomData.name,
+        roomName: roomData.name,
         prId,
         roomId
       }))
@@ -129,12 +129,12 @@ async function notifyAdmins({ roomId, submitterName, fileName, type, prId }) {
 // ── CONFIG ────────────────────────────────────────
 app.get('/api/config', (req, res) => {
   res.json({
-    apiKey:            process.env.FIREBASE_API_KEY,
-    authDomain:        process.env.FIREBASE_AUTH_DOMAIN,
-    projectId:         process.env.FIREBASE_PROJECT_ID,
-    storageBucket:     process.env.FIREBASE_STORAGE_BUCKET,
+    apiKey: process.env.FIREBASE_API_KEY,
+    authDomain: process.env.FIREBASE_AUTH_DOMAIN,
+    projectId: process.env.FIREBASE_PROJECT_ID,
+    storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
     messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID,
-    appId:             process.env.FIREBASE_APP_ID
+    appId: process.env.FIREBASE_APP_ID
   });
 });
 
@@ -153,11 +153,11 @@ app.post('/api/auth/profile', verifyToken, async (req, res) => {
   try {
     const { displayName, photoURL, email } = req.body;
     await db.collection('users').doc(req.user.uid).set({
-      uid:         req.user.uid,
-      displayName: displayName || req.user.name    || '',
-      photoURL:    photoURL    || req.user.picture || '',
-      email:       email       || req.user.email   || '',
-      updatedAt:   admin.firestore.FieldValue.serverTimestamp()
+      uid: req.user.uid,
+      displayName: displayName || req.user.name || '',
+      photoURL: photoURL || req.user.picture || '',
+      email: email || req.user.email || '',
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
     }, { merge: true });
     res.json({ success: true });
   } catch (err) {
@@ -172,28 +172,28 @@ app.post('/api/rooms/create', verifyToken, async (req, res) => {
     if (!name) return res.status(400).json({ error: 'Room name is required' });
 
     const inviteCode = genInviteCode();
-    const roomRef    = db.collection('rooms').doc();
+    const roomRef = db.collection('rooms').doc();
 
     await roomRef.set({
-      id:          roomRef.id,
+      id: roomRef.id,
       name,
-      description: description  || '',
-      githubRepo:  githubRepo   || '',
+      description: description || '',
+      githubRepo: githubRepo || '',
       inviteCode,
-      createdBy:   req.user.uid,
-      createdAt:   admin.firestore.FieldValue.serverTimestamp(),
+      createdBy: req.user.uid,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
       members: {
         [req.user.uid]: {
-          role:        'admin',
-          displayName: req.user.name    || '',
-          photoURL:    req.user.picture || '',
-          joinedAt:    admin.firestore.FieldValue.serverTimestamp()
+          role: 'admin',
+          displayName: req.user.name || '',
+          photoURL: req.user.picture || '',
+          joinedAt: admin.firestore.FieldValue.serverTimestamp()
         }
       }
     });
 
     await db.collection('users').doc(req.user.uid).set({
-      uid:   req.user.uid,
+      uid: req.user.uid,
       rooms: admin.firestore.FieldValue.arrayUnion(roomRef.id)
     }, { merge: true });
 
@@ -214,7 +214,7 @@ app.post('/api/rooms/join', verifyToken, async (req, res) => {
     if (snap.empty) return res.status(404).json({ error: 'Room not found — check invite code' });
 
     const roomDoc = snap.docs[0];
-    const room    = roomDoc.data();
+    const room = roomDoc.data();
 
     if (room.members?.[req.user.uid]) {
       return res.json({ roomId: roomDoc.id, alreadyMember: true });
@@ -222,10 +222,10 @@ app.post('/api/rooms/join', verifyToken, async (req, res) => {
 
     await roomDoc.ref.update({
       [`members.${req.user.uid}`]: {
-        role:        'member',
-        displayName: req.user.name    || '',
-        photoURL:    req.user.picture || '',
-        joinedAt:    admin.firestore.FieldValue.serverTimestamp()
+        role: 'member',
+        displayName: req.user.name || '',
+        photoURL: req.user.picture || '',
+        joinedAt: admin.firestore.FieldValue.serverTimestamp()
       }
     });
 
@@ -241,17 +241,17 @@ app.post('/api/rooms/join', verifyToken, async (req, res) => {
 
 app.get('/api/rooms', verifyToken, async (req, res) => {
   try {
-    const userRef  = db.collection('users').doc(req.user.uid);
+    const userRef = db.collection('users').doc(req.user.uid);
     const userSnap = await userRef.get();
 
     if (!userSnap.exists) {
       await userRef.set({
-        uid:         req.user.uid,
-        displayName: req.user.name    || '',
-        email:       req.user.email   || '',
-        photoURL:    req.user.picture || '',
-        rooms:       [],
-        createdAt:   admin.firestore.FieldValue.serverTimestamp()
+        uid: req.user.uid,
+        displayName: req.user.name || '',
+        email: req.user.email || '',
+        photoURL: req.user.picture || '',
+        rooms: [],
+        createdAt: admin.firestore.FieldValue.serverTimestamp()
       });
       return res.json([]);
     }
@@ -287,9 +287,9 @@ app.patch('/api/rooms/:roomId', verifyToken, async (req, res) => {
     if (!snap.exists) return res.status(404).json({ error: 'Room not found' });
     if (snap.data().members?.[req.user.uid]?.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
     await snap.ref.update({
-      ...(name        !== undefined && { name }),
+      ...(name !== undefined && { name }),
       ...(description !== undefined && { description }),
-      ...(githubRepo  !== undefined && { githubRepo }),
+      ...(githubRepo !== undefined && { githubRepo }),
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     });
     res.json({ success: true });
@@ -329,10 +329,10 @@ app.patch('/api/rooms/:roomId/members/:uid/role', verifyToken, async (req, res) 
 
 app.delete('/api/rooms/:roomId/members/:uid', verifyToken, async (req, res) => {
   try {
-    const snap   = await db.collection('rooms').doc(req.params.roomId).get();
+    const snap = await db.collection('rooms').doc(req.params.roomId).get();
     if (!snap.exists) return res.status(404).json({ error: 'Room not found' });
     const isAdmin = snap.data().members?.[req.user.uid]?.role === 'admin';
-    const isSelf  = req.params.uid === req.user.uid;
+    const isSelf = req.params.uid === req.user.uid;
     if (!isAdmin && !isSelf) return res.status(403).json({ error: 'Not allowed' });
     await snap.ref.update({ [`members.${req.params.uid}`]: admin.firestore.FieldValue.delete() });
     await db.collection('users').doc(req.params.uid).update({
@@ -347,7 +347,7 @@ app.delete('/api/rooms/:roomId/members/:uid', verifyToken, async (req, res) => {
 // ── MESSAGES ──────────────────────────────────────
 app.get('/api/rooms/:roomId/messages', verifyToken, async (req, res) => {
   try {
-    const lim    = parseInt(req.query.limit) || 50;
+    const lim = parseInt(req.query.limit) || 50;
     const before = req.query.before;
 
     const roomSnap = await db.collection('rooms').doc(req.params.roomId).get();
@@ -378,8 +378,8 @@ app.delete('/api/rooms/:roomId/messages/:msgId', verifyToken, async (req, res) =
     if (!snap.exists) return res.status(404).json({ error: 'Message not found' });
 
     const roomSnap = await db.collection('rooms').doc(req.params.roomId).get();
-    const isAdmin  = roomSnap.data()?.members?.[req.user.uid]?.role === 'admin';
-    const isOwner  = snap.data().uid === req.user.uid;
+    const isAdmin = roomSnap.data()?.members?.[req.user.uid]?.role === 'admin';
+    const isOwner = snap.data().uid === req.user.uid;
     if (!isAdmin && !isOwner) return res.status(403).json({ error: 'Not allowed' });
 
     await msgRef.update({ deleted: true, text: '', textHtml: '' });
@@ -394,7 +394,7 @@ app.post('/api/rooms/:roomId/typing', verifyToken, async (req, res) => {
   try {
     await db.collection('rooms').doc(req.params.roomId)
       .collection('typing').doc(req.user.uid).set({
-        name:      req.user.name || 'Someone',
+        name: req.user.name || 'Someone',
         updatedAt: admin.firestore.FieldValue.serverTimestamp()
       });
     res.json({ success: true });
@@ -429,9 +429,9 @@ app.patch('/api/rooms/:roomId/editor', verifyToken, async (req, res) => {
     const { content, language, fileName } = req.body;
     await db.collection('rooms').doc(req.params.roomId)
       .collection('editor').doc('state').set({
-        content:      content  ?? '',
-        language:     language || 'javascript',
-        fileName:     fileName || 'untitled.js',
+        content: content ?? '',
+        language: language || 'javascript',
+        fileName: fileName || 'untitled.js',
         lastEditedBy: req.user.uid,
         lastEditedAt: admin.firestore.FieldValue.serverTimestamp()
       }, { merge: true });
@@ -462,18 +462,18 @@ app.post('/api/rooms/:roomId/files', verifyToken, async (req, res) => {
     if (!fileName) return res.status(400).json({ error: 'fileName required' });
 
     const trimmedName = fileName.trim();
-    const ref         = db.collection('rooms').doc(req.params.roomId).collection('prs').doc();
+    const ref = db.collection('rooms').doc(req.params.roomId).collection('prs').doc();
 
     await ref.set({
-      id:        ref.id,
-      type:      'create',
-      fileName:  trimmedName,
-      language:  language || 'javascript',
-      content:   content  || '',
-      uid:       req.user.uid,
-      name:      req.user.name    || '',
-      photo:     req.user.picture || '',
-      status:    'pending',
+      id: ref.id,
+      type: 'create',
+      fileName: trimmedName,
+      language: language || 'javascript',
+      content: content || '',
+      uid: req.user.uid,
+      name: req.user.name || '',
+      photo: req.user.picture || '',
+      status: 'pending',
       createdAt: admin.firestore.FieldValue.serverTimestamp()
     });
 
@@ -481,11 +481,11 @@ app.post('/api/rooms/:roomId/files', verifyToken, async (req, res) => {
 
     // Email after response — non-blocking
     notifyAdmins({
-      roomId:        req.params.roomId,
+      roomId: req.params.roomId,
       submitterName: req.user.name || 'Someone',
-      fileName:      trimmedName,           // ← always defined
-      type:          'create',
-      prId:          ref.id
+      fileName: trimmedName,           // ← always defined
+      type: 'create',
+      prId: ref.id
     }).catch(err => console.error('PR email failed:', err.message));
 
   } catch (err) {
@@ -508,27 +508,27 @@ app.patch('/api/rooms/:roomId/files/:fileId', verifyToken, async (req, res) => {
     const ref = db.collection('rooms').doc(req.params.roomId).collection('prs').doc();
 
     await ref.set({
-      id:        ref.id,
-      type:      'edit',
-      fileId:    req.params.fileId,
+      id: ref.id,
+      type: 'edit',
+      fileId: req.params.fileId,
       fileName,                                         // ← always defined
-      language:  fileLang,
-      content:   content || '',
-      uid:       req.user.uid,
-      name:      req.user.name    || '',
-      photo:     req.user.picture || '',
-      status:    'pending',
+      language: fileLang,
+      content: content || '',
+      uid: req.user.uid,
+      name: req.user.name || '',
+      photo: req.user.picture || '',
+      status: 'pending',
       createdAt: admin.firestore.FieldValue.serverTimestamp()
     });
 
     res.json({ prId: ref.id, status: 'pending' });
 
     notifyAdmins({
-      roomId:        req.params.roomId,
+      roomId: req.params.roomId,
       submitterName: req.user.name || 'Someone',
       fileName,                                         // ← from fileSnap
-      type:          'edit',
-      prId:          ref.id
+      type: 'edit',
+      prId: ref.id
     }).catch(err => console.error('PR email failed:', err.message));
 
   } catch (err) {
@@ -575,15 +575,15 @@ app.post('/api/rooms/:roomId/prs/:prId/review', verifyToken, async (req, res) =>
     if (!roomSnap.exists) return res.status(404).json({ error: 'Room not found' });
     if (roomSnap.data().members?.[req.user.uid]?.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
 
-    const prRef  = db.collection('rooms').doc(req.params.roomId).collection('prs').doc(req.params.prId);
+    const prRef = db.collection('rooms').doc(req.params.roomId).collection('prs').doc(req.params.prId);
     const prSnap = await prRef.get();
     if (!prSnap.exists) return res.status(404).json({ error: 'PR not found' });
 
-    const pr        = prSnap.data();
+    const pr = prSnap.data();
     const newStatus = action === 'approve' ? 'approved' : 'rejected';
 
     await prRef.update({
-      status:     newStatus,
+      status: newStatus,
       reviewedBy: req.user.uid,
       reviewedAt: admin.firestore.FieldValue.serverTimestamp()
     });
@@ -592,16 +592,16 @@ app.post('/api/rooms/:roomId/prs/:prId/review', verifyToken, async (req, res) =>
       const filesRef = db.collection('rooms').doc(req.params.roomId).collection('files');
       if (pr.type === 'create') {
         await filesRef.doc().set({
-          fileName:  pr.fileName,
-          language:  pr.language  || 'javascript',
-          content:   pr.content   || '',
+          fileName: pr.fileName,
+          language: pr.language || 'javascript',
+          content: pr.content || '',
           createdBy: pr.uid,
           createdAt: admin.firestore.FieldValue.serverTimestamp()
         });
       } else if (pr.type === 'edit') {
         await filesRef.doc(pr.fileId).update({
-          content:    pr.content  || '',
-          language:   pr.language || 'javascript',
+          content: pr.content || '',
+          language: pr.language || 'javascript',
           lastEditBy: pr.uid,
           lastEditAt: admin.firestore.FieldValue.serverTimestamp()
         });
@@ -622,11 +622,11 @@ app.get('/api/invite/:code', optionalAuth, async (req, res) => {
     if (snap.empty) return res.status(404).json({ error: 'Invalid invite code' });
     const room = snap.docs[0].data();
     res.json({
-      roomId:      snap.docs[0].id,
-      name:        room.name,
+      roomId: snap.docs[0].id,
+      name: room.name,
       description: room.description || '',
       memberCount: Object.keys(room.members || {}).length,
-      inviteCode:  room.inviteCode
+      inviteCode: room.inviteCode
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -657,11 +657,11 @@ app.post('/api/ai/chat', verifyToken, async (req, res) => {
       : `You are an AI coding assistant in a developer chat room. Keep answers concise.\n\n${prompt}`;
 
     const response = await genai.models.generateContent({
-      model:    'gemini-2.5-flash',
+      model: 'gemini-2.5-flash',
       contents: fullPrompt
     });
 
-    const raw  = response.text;
+    const raw = response.text;
     const html = marked.parse(raw);
     res.json({ reply: raw, replyHtml: html });
   } catch (err) {
@@ -673,9 +673,9 @@ app.post('/api/ai/private/stream', verifyToken, async (req, res) => {
   const { prompt, history } = req.body;
   if (!prompt) return res.status(400).json({ error: 'Prompt required' });
 
-  res.setHeader('Content-Type',    'text/event-stream');
-  res.setHeader('Cache-Control',   'no-cache');
-  res.setHeader('Connection',      'keep-alive');
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
   res.setHeader('X-Accel-Buffering', 'no');
   res.flushHeaders();
 
@@ -684,7 +684,7 @@ app.post('/api/ai/private/stream', verifyToken, async (req, res) => {
     if (Array.isArray(history)) {
       history.slice(-10).forEach(msg => {
         contents.push({
-          role:  msg.role === 'ai' ? 'model' : 'user',
+          role: msg.role === 'ai' ? 'model' : 'user',
           parts: [{ text: msg.text }]
         });
       });
@@ -692,12 +692,12 @@ app.post('/api/ai/private/stream', verifyToken, async (req, res) => {
     contents.push({ role: 'user', parts: [{ text: prompt }] });
 
     const stream = await genai.models.generateContentStream({
-      model:    'gemini-2.5-flash',
+      model: 'gemini-2.5-flash',
       contents,
       config: {
         systemInstruction: 'You are an expert coding assistant. Help with code generation, debugging, explanations, and code review. Always format code blocks with proper markdown (```language ... ```).',
-        temperature:       0.8,
-        maxOutputTokens:   4096
+        temperature: 0.8,
+        maxOutputTokens: 4096
       }
     });
 
@@ -727,7 +727,7 @@ app.post('/api/ai/private', verifyToken, async (req, res) => {
     if (Array.isArray(history)) {
       history.slice(-10).forEach(msg => {
         contents.push({
-          role:  msg.role === 'ai' ? 'model' : 'user',
+          role: msg.role === 'ai' ? 'model' : 'user',
           parts: [{ text: msg.text }]
         });
       });
@@ -735,12 +735,12 @@ app.post('/api/ai/private', verifyToken, async (req, res) => {
     contents.push({ role: 'user', parts: [{ text: prompt }] });
 
     const response = await genai.models.generateContent({
-      model:    'gemini-2.5-flash',
+      model: 'gemini-2.5-flash',
       contents,
       config: { systemInstruction: 'You are an expert coding assistant.', temperature: 0.8, maxOutputTokens: 4096 }
     });
 
-    const raw  = response.text;
+    const raw = response.text;
     const html = marked.parse(raw);
     res.json({ reply: raw, replyHtml: html });
   } catch (err) {
@@ -756,12 +756,12 @@ app.post('/api/ai/snippet-verdict', verifyToken, async (req, res) => {
     const prompt = `Analyze this ${language || 'code'} snippet in max 3 sentences. Cover: bugs or issues, code quality, one improvement suggestion.\n\n\`\`\`${language || ''}\n${code}\n\`\`\``;
 
     const response = await genai.models.generateContent({
-      model:    'gemini-2.5-flash',
+      model: 'gemini-2.5-flash',
       contents: prompt,
-      config:   { temperature: 0.3, maxOutputTokens: 512 }
+      config: { temperature: 0.3, maxOutputTokens: 512 }
     });
 
-    const raw  = response.text;
+    const raw = response.text;
     const html = marked.parse(raw);
     res.json({ verdict: raw, verdictHtml: html });
   } catch (err) {
@@ -774,18 +774,23 @@ app.post('/api/rooms/:roomId/upload', verifyToken, async (req, res) => {
   try {
     const { fileName, contentType } = req.body;
     if (!fileName || !contentType) return res.status(400).json({ error: 'fileName and contentType required' });
-    const filePath    = `rooms/${req.params.roomId}/${Date.now()}_${fileName}`;
-    const file        = bucket.file(filePath);
+
+    const filePath = `rooms/${req.params.roomId}/${Date.now()}_${fileName}`;
+    const file = bucket.file(filePath);
     const [signedUrl] = await file.getSignedUrl({
-      action:  'write',
+      action: 'write',
       expires: Date.now() + 15 * 60 * 1000,
       contentType
     });
-    res.json({ uploadUrl: signedUrl, publicUrl: `https://storage.googleapis.com/${bucket.name}/${filePath}`, filePath });
+
+    const publicUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(filePath)}?alt=media`;
+
+    res.json({ uploadUrl: signedUrl, publicUrl, filePath });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
+
 
 app.delete('/api/rooms/:roomId/files-storage', verifyToken, async (req, res) => {
   try {

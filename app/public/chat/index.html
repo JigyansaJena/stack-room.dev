@@ -1667,7 +1667,14 @@
                                 oninput="window.onChatInput(event)" onkeydown="window.onChatKeydown(event)"></textarea>
 
                             <div class="input-toolbar">
+                                <input type="file" id="file-input" accept="image/*,video/*,.pdf" style="display:none;"
+                                    onchange="window.handleFileAttach(event)">
+
                                 <div class="input-toolbar-left">
+                                    <button class="icon-btn" onclick="document.getElementById('file-input').click()"
+                                        title="Attach image, video or PDF">
+                                        <i class="fa-solid fa-paperclip"></i>
+                                    </button>
                                     <button class="icon-btn" onclick="window.insertCode()" title="Insert code snippet">
                                         <i class="fa-solid fa-code"></i>
                                     </button>
@@ -1675,10 +1682,12 @@
                                         <i class="fa-solid fa-at"></i>
                                     </button>
                                 </div>
+
                                 <button id="send-btn" onclick="window.sendMessage()">
                                     <i class="fa-solid fa-paper-plane"></i>
                                 </button>
                             </div>
+
                         </div>
                     </div>
                 </div>
@@ -2209,49 +2218,94 @@
             if (msg.replyTo) {
                 const rm = members[msg.replyTo.uid] || {};
                 replyHTML = `
-        <div class="reply-quote"
-             onclick="document.getElementById('msg-${msg.replyTo.id}')?.scrollIntoView({behavior:'smooth'})">
-          <strong>${esc(rm.displayName || msg.replyTo.name || 'Unknown')}</strong>:
-          ${esc((msg.replyTo.text || '').slice(0, 60))}${(msg.replyTo.text?.length || 0) > 60 ? '...' : ''}
+      <div class="reply-quote"
+           onclick="document.getElementById('msg-${msg.replyTo.id}')?.scrollIntoView({behavior:'smooth'})">
+        <strong>${esc(rm.displayName || msg.replyTo.name || 'Unknown')}</strong>:
+        ${esc((msg.replyTo.text || '').slice(0, 60))}${(msg.replyTo.text?.length || 0) > 60 ? '...' : ''}
+      </div>`;
+            }
+
+            let attachHTML = '';
+            if (msg.attachment && !msg.deleted) {
+                const { type, url, name } = msg.attachment;
+                if (type === 'image') {
+                    attachHTML = `
+    <div class="msg-attachment">
+      <img src="${esc(url)}" alt="${esc(name)}"
+        style="max-width:320px;max-height:240px;border-radius:8px;cursor:pointer;margin-top:6px;display:block;"
+        onclick="window.open('${esc(url)}','_blank')"
+        data-err="<span style='font-size:11px;color:var(--muted2);'>Image failed to load</span>"
+        onerror="this.parentElement.innerHTML=this.dataset.err">
+    </div>`;
+                }
+                else if (type === 'video') {
+                    attachHTML = `
+        <div class="msg-attachment" style="margin-top:6px;">
+          <video controls
+            style="max-width:320px;border-radius:8px;display:block;background:#000;">
+            <source src="${esc(url)}">
+            Your browser does not support video.
+          </video>
         </div>`;
+                } else if (type === 'pdf') {
+                    attachHTML = `
+        <div class="msg-attachment" style="margin-top:6px;">
+          <a href="${esc(url)}" target="_blank" rel="noopener noreferrer"
+             style="display:inline-flex;align-items:center;gap:8px;
+                    padding:8px 14px;background:var(--bg3);
+                    border:1px solid var(--border);border-radius:8px;
+                    color:var(--indigo2);font-size:12px;text-decoration:none;
+                    transition:background 0.15s ease;"
+             onmouseover="this.style.background='var(--bg2)'"
+             onmouseout="this.style.background='var(--bg3)'">
+            <i class="fa-solid fa-file-pdf" style="color:#f87171;font-size:14px;"></i>
+            <span style="max-width:200px;overflow:hidden;text-overflow:ellipsis;
+                         white-space:nowrap;">${esc(name)}</span>
+            <i class="fa-solid fa-arrow-up-right-from-square"
+               style="font-size:9px;opacity:0.6;flex-shrink:0;"></i>
+          </a>
+        </div>`;
+                }
             }
 
             return `
-      <div class="msg" id="msg-${msg.id}">
-        <div class="msg-avatar">
-          ${photo
+    <div class="msg" id="msg-${msg.id}">
+      <div class="msg-avatar">
+        ${photo
                     ? `<img src="${esc(photo)}" alt=""
-                    onerror="this.parentElement.textContent='${initials}'">`
+                  onerror="this.parentElement.textContent='${initials}'">`
                     : initials}
+      </div>
+      <div class="msg-body">
+        ${replyHTML}
+        <div class="msg-meta">
+          <span class="msg-name ${msg.isAI ? 'ai' : ''}">
+            ${msg.isAI ? '<i class="fa-solid fa-wand-magic-sparkles mr-1" style="font-size:9px;"></i>' : ''}
+            ${esc(m.displayName || msg.displayName || 'Unknown')}
+          </span>
+          <span class="msg-time">${formatTime(msg.createdAt)}</span>
+          ${msg.edited ? '<span style="font-size:10px;color:var(--muted2);">(edited)</span>' : ''}
         </div>
-        <div class="msg-body">
-          ${replyHTML}
-          <div class="msg-meta">
-            <span class="msg-name ${msg.isAI ? 'ai' : ''}">
-              ${msg.isAI ? '<i class="fa-solid fa-wand-magic-sparkles mr-1" style="font-size:9px;"></i>' : ''}
-              ${esc(m.displayName || msg.displayName || 'Unknown')}
-            </span>
-            <span class="msg-time">${formatTime(msg.createdAt)}</span>
-            ${msg.edited ? '<span style="font-size:10px;color:var(--muted2);">(edited)</span>' : ''}
-          </div>
-          <div class="msg-text ${msg.deleted ? 'deleted' : ''}"
-               id="msg-text-${msg.id}">${textContent}</div>
-        </div>
-        <div class="msg-actions">
-          <button class="icon-btn" onclick="window.replyMsg('${msg.id}')" title="Reply">
-            <i class="fa-solid fa-reply"></i>
-          </button>
-          ${canEdit ? `
-          <button class="icon-btn" onclick="window.editMsg('${msg.id}')" title="Edit">
-            <i class="fa-solid fa-pen"></i>
-          </button>` : ''}
-          ${canDel ? `
-          <button class="icon-btn danger" onclick="window.deleteMsg('${msg.id}')" title="Delete">
-            <i class="fa-solid fa-trash"></i>
-          </button>` : ''}
-        </div>
-      </div>`;
+        ${attachHTML}
+        <div class="msg-text ${msg.deleted ? 'deleted' : ''}"
+             id="msg-text-${msg.id}">${textContent}</div>
+      </div>
+      <div class="msg-actions">
+        <button class="icon-btn" onclick="window.replyMsg('${msg.id}')" title="Reply">
+          <i class="fa-solid fa-reply"></i>
+        </button>
+        ${canEdit ? `
+        <button class="icon-btn" onclick="window.editMsg('${msg.id}')" title="Edit">
+          <i class="fa-solid fa-pen"></i>
+        </button>` : ''}
+        ${canDel ? `
+        <button class="icon-btn danger" onclick="window.deleteMsg('${msg.id}')" title="Delete">
+          <i class="fa-solid fa-trash"></i>
+        </button>` : ''}
+      </div>
+    </div>`;
         }
+
 
         function appendMessage(msg) {
             const container = document.getElementById('messages');
@@ -3000,6 +3054,61 @@
             });
             await fbSignOut(auth);
             window.location.href = '/auth/';
+        };
+
+        window.handleFileAttach = async (e) => {
+            const file = e.target.files[0];
+            e.target.value = '';
+            if (!file) return;
+
+            const MAX = 20 * 1024 * 1024; // 20MB
+            if (file.size > MAX) { showToast('Max file size is 20MB.', 'error'); return; }
+
+            const type =
+                file.type.startsWith('image/') ? 'image' :
+                    file.type.startsWith('video/') ? 'video' :
+                        file.type === 'application/pdf' ? 'pdf' : null;
+
+            if (!type) { showToast('Only images, videos and PDFs allowed.', 'error'); return; }
+
+            showToast('Uploading...', 'info');
+
+            try {
+                const token = await getToken();
+
+                // 1. Get signed URL
+                const res = await fetch(`/api/rooms/${roomId}/upload`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                    body: JSON.stringify({ fileName: file.name, contentType: file.type })
+                });
+                const { uploadUrl, publicUrl } = await res.json();
+                if (!res.ok) throw new Error('Failed to get upload URL');
+
+                // 2. Upload directly to Firebase Storage
+                const upload = await fetch(uploadUrl, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': file.type },
+                    body: file
+                });
+                if (!upload.ok) throw new Error('Upload failed');
+
+                // 3. Save message to Firestore
+                await addDoc(collection(db, 'rooms', roomId, 'messages'), {
+                    uid: currentUser.uid,
+                    displayName: currentUser.displayName || '',
+                    photoURL: currentUser.photoURL || '',
+                    text: '',
+                    attachment: { type, url: publicUrl, name: file.name },
+                    createdAt: serverTimestamp(),
+                    deleted: false,
+                    edited: false
+                });
+
+                showToast('File sent!', 'success');
+            } catch (err) {
+                showToast('Upload failed: ' + err.message, 'error');
+            }
         };
 
         // ─────────────────────────────────────────────
