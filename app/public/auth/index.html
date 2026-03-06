@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>StackRoom — Sign In</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: { extend: { fontFamily: { mono: ['JetBrains Mono', 'monospace'] } } }
+    }
+  </script>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"/>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+  <style>
+    * { font-family: 'JetBrains Mono', monospace; box-sizing: border-box; }
+
+    :root {
+      --bg: #09090b; --bg2: #111113; --bg3: rgba(255,255,255,0.03);
+      --border: rgba(255,255,255,0.06); --text: #f4f4f5;
+      --muted: #71717a; --muted2: #52525b;
+    }
+    html.light {
+      --bg: #fafafa; --bg2: #f4f4f5; --bg3: rgba(0,0,0,0.02);
+      --border: rgba(0,0,0,0.08); --text: #18181b;
+      --muted: #52525b; --muted2: #a1a1aa;
+    }
+
+    body {
+      background: var(--bg); color: var(--text);
+      min-height: 100vh; display: flex;
+      align-items: center; justify-content: center;
+      overflow: hidden; transition: background 0.4s ease;
+    }
+
+    .grid-bg {
+      background-image:
+        linear-gradient(rgba(99,102,241,0.05) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(99,102,241,0.05) 1px, transparent 1px);
+      background-size: 40px 40px;
+    }
+
+    #cursor-glow {
+      position: fixed; width: 400px; height: 400px;
+      border-radius: 50%; pointer-events: none; z-index: 0;
+      transform: translate(-50%, -50%);
+      background: radial-gradient(circle, rgba(99,102,241,0.1) 0%, transparent 65%);
+    }
+
+    .auth-card {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      position: relative; z-index: 10;
+      transition: background 0.4s ease, border-color 0.4s ease;
+    }
+    .auth-card::before {
+      content: ''; position: absolute; inset: -1px;
+      border-radius: 21px;
+      background: linear-gradient(135deg, rgba(99,102,241,0.3), transparent 40%, transparent 60%, rgba(99,102,241,0.15));
+      z-index: -1;
+    }
+
+    .btn-provider {
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      color: var(--text);
+      transition: all 0.3s ease;
+      position: relative; overflow: hidden;
+      cursor: pointer; width: 100%;
+    }
+    .btn-provider::before {
+      content: ''; position: absolute; top: 0; left: -100%;
+      width: 100%; height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.05), transparent);
+      transition: left 0.4s ease;
+    }
+    .btn-provider:hover::before { left: 100%; }
+    .btn-provider:hover {
+      border-color: rgba(99,102,241,0.5);
+      background: rgba(99,102,241,0.08);
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(99,102,241,0.15);
+    }
+    .btn-provider:active { transform: translateY(0); }
+    .btn-provider:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+    .divider { display: flex; align-items: center; gap: 12px; }
+    .divider::before, .divider::after {
+      content: ''; flex: 1; height: 1px; background: var(--border);
+    }
+
+    .spinner {
+      width: 16px; height: 16px;
+      border: 2px solid rgba(99,102,241,0.3);
+      border-top-color: #6366f1;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      display: none; flex-shrink: 0;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    #toast {
+      position: fixed; bottom: 24px; left: 50%;
+      transform: translateX(-50%) translateY(80px);
+      background: var(--bg2); border: 1px solid var(--border);
+      border-radius: 12px; padding: 12px 20px;
+      font-size: 12px; color: var(--text);
+      display: flex; align-items: center; gap: 8px;
+      z-index: 100; transition: transform 0.4s ease;
+      white-space: nowrap;
+    }
+    #toast.show  { transform: translateX(-50%) translateY(0); }
+    #toast.error   { border-color: rgba(239,68,68,0.4); }
+    #toast.success { border-color: rgba(16,185,129,0.4); }
+
+    #theme-toggle {
+      width: 36px; height: 20px;
+      background: rgba(99,102,241,0.2);
+      border: 1px solid rgba(99,102,241,0.3);
+      border-radius: 999px; cursor: pointer;
+      position: relative; transition: all 0.3s ease;
+    }
+    #theme-toggle::after {
+      content: ''; position: absolute;
+      width: 12px; height: 12px; border-radius: 50%;
+      background: #6366f1; top: 3px; left: 3px;
+      transition: transform 0.3s ease;
+    }
+    html.light #theme-toggle::after { transform: translateX(16px); }
+
+    .noise {
+      position: fixed; inset: 0; pointer-events: none; z-index: 999; opacity: 0.02;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    }
+
+    #auth-canvas {
+      position: fixed; inset: 0;
+      width: 100%; height: 100%;
+      pointer-events: none; z-index: 1;
+    }
+
+    .tag {
+      border: 1px solid rgba(99,102,241,0.3);
+      background: rgba(99,102,241,0.08);
+      color: #818cf8;
+    }
+
+    /* Quick join input */
+    #quick-code {
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 12px;
+      padding: 10px 14px;
+      font-size: 12px;
+      outline: none;
+      transition: all 0.3s ease;
+      width: 100%;
+      font-family: 'JetBrains Mono', monospace;
+      letter-spacing: 0.1em;
+    }
+    #quick-code::placeholder { color: var(--muted2); }
+    #quick-code:focus {
+      border-color: rgba(99,102,241,0.5);
+      box-shadow: 0 0 0 3px rgba(99,102,241,0.1);
+    }
+
+    .btn-join {
+      background: #6366f1;
+      color: white;
+      border: none;
+      border-radius: 12px;
+      padding: 10px 18px;
+      font-size: 12px;
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .btn-join:hover { background: #4f46e5; box-shadow: 0 0 20px rgba(99,102,241,0.3); }
+  </style>
+</head>
+<body class="grid-bg">
+
+  <div class="noise"></div>
+  <div id="cursor-glow"></div>
+  <canvas id="auth-canvas"></canvas>
+
+  <!-- Top bar -->
+  <div class="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-6 py-4">
+    <a href="/" class="flex items-center gap-2 hover:opacity-80 transition-opacity">
+      <div class="w-6 h-6 rounded-md bg-indigo-500 flex items-center justify-center">
+        <i class="fa-solid fa-code text-white text-xs"></i>
+      </div>
+      <span class="font-bold text-sm" style="color: var(--text);">StackRoom</span>
+    </a>
+    <div class="flex items-center gap-2">
+      <i class="fa-solid fa-moon text-xs" id="theme-icon" style="color: var(--muted);"></i>
+      <div id="theme-toggle"></div>
+    </div>
+  </div>
+
+  <!-- Auth Card -->
+  <div class="auth-card w-full max-w-sm mx-4 p-8" id="auth-card" style="opacity:0; transform: translateY(30px);">
+
+    <!-- Header -->
+    <div class="text-center mb-8">
+      <div class="w-12 h-12 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center mx-auto mb-4">
+        <i class="fa-solid fa-code text-indigo-400 text-lg"></i>
+      </div>
+      <h1 class="text-xl font-bold mb-1" style="color: var(--text);">Welcome to StackRoom</h1>
+      <p class="text-xs leading-5" style="color: var(--muted);">
+        Sign in to start collaborating with your team in real-time.
+      </p>
+    </div>
+
+    <!-- Google Button -->
+    <button id="btn-google"
+      class="btn-provider flex items-center justify-center gap-3 py-3 px-4 rounded-xl text-sm font-medium mb-3"
+      onclick="signInWithGoogle()">
+      <div class="spinner" id="spinner-google"></div>
+      <svg width="16" height="16" viewBox="0 0 24 24" id="icon-google" style="flex-shrink:0;">
+        <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+        <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+        <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/>
+        <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+      </svg>
+      <span id="label-google">Continue with Google</span>
+    </button>
+
+    <!-- GitHub Button -->
+    <button id="btn-github"
+      class="btn-provider flex items-center justify-center gap-3 py-3 px-4 rounded-xl text-sm font-medium mb-6"
+      onclick="signInWithGithub()">
+      <div class="spinner" id="spinner-github"></div>
+      <i class="fa-brands fa-github text-base" id="icon-github" style="color: var(--text); flex-shrink:0;"></i>
+      <span id="label-github">Continue with GitHub</span>
+    </button>
+
+    <!-- Divider -->
+    <div class="divider mb-5">
+      <span class="text-xs" style="color: var(--muted2);">have a room code?</span>
+    </div>
+
+    <!-- Quick join -->
+    <div class="mb-6">
+      <p class="text-xs mb-2" style="color: var(--muted);">
+        Enter a room invite code — we'll redirect you right after sign in.
+      </p>
+      <div class="flex gap-2">
+        <input
+          id="quick-code"
+          type="text"
+          placeholder="e.g. X7K9AB"
+          maxlength="8"
+          oninput="this.value = this.value.toUpperCase()"
+        />
+        <button class="btn-join" onclick="quickJoin()">Join</button>
+      </div>
+    </div>
+
+    <!-- Terms -->
+    <p class="text-center text-xs leading-5" style="color: var(--muted2);">
+      By signing in you agree to our
+      <a href="#" class="text-indigo-400 hover:underline">Terms</a> &amp;
+      <a href="#" class="text-indigo-400 hover:underline">Privacy Policy</a>.
+    </p>
+
+  </div>
+
+  <!-- OSS badge -->
+  <div class="fixed bottom-6 left-1/2 -translate-x-1/2 z-50">
+    <a href="https://github.com/yourrepo/stackroom" target="_blank"
+       class="tag text-xs px-3 py-1.5 rounded-full flex items-center gap-2 hover:opacity-80 transition-opacity">
+      <i class="fa-brands fa-github"></i>
+      <span>Open Source &middot; MIT License</span>
+    </a>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast">
+    <i class="fa-solid fa-circle-info text-indigo-400" id="toast-icon"></i>
+    <span id="toast-msg">Signing in...</span>
+  </div>
+
+  <!-- ═══ FIREBASE MODULE ═══ -->
+  <script type="module">
+    import { initializeApp }       from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+    import {
+      getAuth, GoogleAuthProvider, GithubAuthProvider,
+      signInWithPopup, onAuthStateChanged
+    }                              from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+    import {
+      getFirestore, doc, setDoc, getDoc, serverTimestamp
+    }                              from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+    // ✅ Fetch config from server — no hardcoded keys
+    const firebaseConfig = await fetch('/api/config').then(r => r.json());
+
+    const app  = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db   = getFirestore(app);
+
+    const googleProvider = new GoogleAuthProvider();
+    const githubProvider = new GithubAuthProvider();
+
+    // ── If already signed in, go to lobby ──
+    onAuthStateChanged(auth, (user) => {
+      if (user) {
+        const redirect = sessionStorage.getItem('redirectAfterAuth') || '/lobby/';
+        sessionStorage.removeItem('redirectAfterAuth');
+        window.location.href = redirect;
+      }
+    });
+
+    // ── Save / update user profile in Firestore ──
+    async function saveUserProfile(user) {
+      const ref  = doc(db, 'users', user.uid);
+      const snap = await getDoc(ref);
+      if (!snap.exists()) {
+        await setDoc(ref, {
+          uid:         user.uid,
+          displayName: user.displayName,
+          email:       user.email,
+          photoURL:    user.photoURL,
+          rooms:       [],
+          createdAt:   serverTimestamp()
+        });
+      } else {
+        await setDoc(ref, {
+          displayName: user.displayName,
+          photoURL:    user.photoURL,
+          lastSeen:    serverTimestamp()
+        }, { merge: true });
+      }
+    }
+
+    // ── Loading state helper ──
+    function setLoading(provider, loading) {
+      const btn     = document.getElementById(`btn-${provider}`);
+      const spinner = document.getElementById(`spinner-${provider}`);
+      const icon    = document.getElementById(`icon-${provider}`);
+      const label   = document.getElementById(`label-${provider}`);
+      btn.disabled            = loading;
+      spinner.style.display   = loading ? 'block' : 'none';
+      icon.style.display      = loading ? 'none'  : '';
+      label.textContent       = loading
+        ? 'Signing in...'
+        : `Continue with ${provider.charAt(0).toUpperCase() + provider.slice(1)}`;
+    }
+
+    // ── Toast helper ──
+    function showToast(msg, type = 'info') {
+      const toast    = document.getElementById('toast');
+      const toastMsg = document.getElementById('toast-msg');
+      const toastIcon = document.getElementById('toast-icon');
+      toastMsg.textContent = msg;
+      toast.className = `show ${type}`;
+      toastIcon.className = type === 'error'
+        ? 'fa-solid fa-circle-xmark text-red-400'
+        : type === 'success'
+        ? 'fa-solid fa-circle-check text-green-400'
+        : 'fa-solid fa-circle-info text-indigo-400';
+      setTimeout(() => { toast.className = ''; }, 3500);
+    }
+
+    // ── Friendly error messages ──
+    function getFriendlyError(code) {
+      const map = {
+        'auth/popup-blocked':          'Popup blocked. Please allow popups for this site.',
+        'auth/network-request-failed': 'Network error. Check your connection.',
+        'auth/too-many-requests':      'Too many attempts. Please wait a moment.',
+        'auth/user-disabled':          'This account has been disabled.',
+      };
+      return map[code] || 'Something went wrong. Please try again.';
+    }
+
+    // ── Google sign in ──
+    window.signInWithGoogle = async () => {
+      setLoading('google', true);
+      try {
+        showToast('Opening Google sign-in...', 'info');
+        const result = await signInWithPopup(auth, googleProvider);
+        await saveUserProfile(result.user);
+        showToast('Signed in! Redirecting...', 'success');
+      } catch (err) {
+        setLoading('google', false);
+        if (err.code !== 'auth/popup-closed-by-user') {
+          showToast(getFriendlyError(err.code), 'error');
+        }
+      }
+    };
+
+    // ── GitHub sign in ──
+    window.signInWithGithub = async () => {
+      setLoading('github', true);
+      try {
+        showToast('Opening GitHub sign-in...', 'info');
+        const result = await signInWithPopup(auth, githubProvider);
+        await saveUserProfile(result.user);
+        showToast('Signed in! Redirecting...', 'success');
+      } catch (err) {
+        setLoading('github', false);
+        if (err.code === 'auth/account-exists-with-different-credential') {
+          showToast('Account exists with this email. Try Google sign-in instead.', 'error');
+        } else if (err.code !== 'auth/popup-closed-by-user') {
+          showToast(getFriendlyError(err.code), 'error');
+        }
+      }
+    };
+
+    // ── Quick join ──
+    window.quickJoin = () => {
+      const code = document.getElementById('quick-code').value.trim();
+      if (!code) { showToast('Enter a room code first.', 'error'); return; }
+      sessionStorage.setItem('redirectAfterAuth', `/lobby/?join=${code}`);
+      showToast('Sign in to join the room.', 'info');
+    };
+
+    // Allow Enter key on room code input
+    document.getElementById('quick-code').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') window.quickJoin();
+    });
+  </script>
+
+  <!-- ═══ UI SCRIPTS ═══ -->
+  <script>
+    /* ── Theme ── */
+    const html  = document.documentElement;
+    let isDark  = localStorage.getItem('theme') !== 'light';
+
+    function applyTheme(dark) {
+      isDark = dark;
+      dark ? html.classList.add('dark')    : html.classList.remove('dark');
+      dark ? html.classList.remove('light'): html.classList.add('light');
+      document.getElementById('theme-icon').className =
+        dark ? 'fa-solid fa-moon text-xs' : 'fa-solid fa-sun text-xs';
+      document.getElementById('theme-icon').style.color = 'var(--muted)';
+      localStorage.setItem('theme', dark ? 'dark' : 'light');
+    }
+    applyTheme(isDark);
+    document.getElementById('theme-toggle').onclick = () => applyTheme(!isDark);
+
+    /* ── Cursor glow ── */
+    const glow = document.getElementById('cursor-glow');
+    let mx = innerWidth/2, my = innerHeight/2, cx = mx, cy = my;
+    document.addEventListener('mousemove', e => { mx = e.clientX; my = e.clientY; });
+    (function loop() {
+      cx += (mx - cx) * 0.08;
+      cy += (my - cy) * 0.08;
+      glow.style.left = cx + 'px';
+      glow.style.top  = cy + 'px';
+      requestAnimationFrame(loop);
+    })();
+
+    /* ── Particles ── */
+    const canvas = document.getElementById('auth-canvas');
+    const ctx    = canvas.getContext('2d');
+    canvas.width = innerWidth; canvas.height = innerHeight;
+    window.addEventListener('resize', () => {
+      canvas.width = innerWidth; canvas.height = innerHeight;
+    });
+
+    const pts = Array.from({ length: 50 }, () => ({
+      x: Math.random() * innerWidth,
+      y: Math.random() * innerHeight,
+      sx: (Math.random() - .5) * .3,
+      sy: (Math.random() - .5) * .3,
+      r:  Math.random() * 1.2 + .3,
+      o:  Math.random() * .3 + .1,
+      p:  Math.random() * Math.PI * 2
+    }));
+
+    (function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      pts.forEach(p => {
+        p.x += p.sx; p.y += p.sy; p.p += .02;
+        if (p.x < 0 || p.x > canvas.width)  p.sx *= -1;
+        if (p.y < 0 || p.y > canvas.height) p.sy *= -1;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(99,102,241,${p.o * (.7 + .3 * Math.sin(p.p))})`;
+        ctx.fill();
+      });
+      requestAnimationFrame(draw);
+    })();
+
+    /* ── Card entrance ── */
+    gsap.to('#auth-card', { opacity: 1, y: 0, duration: 0.8, ease: 'power3.out', delay: 0.2 });
+  </script>
+</body>
+</html>

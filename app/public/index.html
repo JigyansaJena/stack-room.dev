@@ -1,0 +1,948 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>StackRoom — Collaborative Coding</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: { accent: '#6366f1' },
+          fontFamily: { mono: ['JetBrains Mono', 'monospace'] }
+        }
+      }
+    }
+  </script>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&display=swap"
+    rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
+  <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+  <style>
+    * {
+      font-family: 'JetBrains Mono', monospace;
+      box-sizing: border-box;
+    }
+
+    :root {
+      --bg: #09090b;
+      --bg2: #111113;
+      --bg3: rgba(255, 255, 255, 0.03);
+      --border: rgba(255, 255, 255, 0.06);
+      --border-hover: rgba(99, 102, 241, 0.4);
+      --text: #f4f4f5;
+      --muted: #71717a;
+      --muted2: #52525b;
+      --grid-color: rgba(99, 102, 241, 0.06);
+    }
+
+    html.light {
+      --bg: #fafafa;
+      --bg2: #f4f4f5;
+      --bg3: rgba(0, 0, 0, 0.02);
+      --border: rgba(0, 0, 0, 0.08);
+      --border-hover: rgba(99, 102, 241, 0.5);
+      --text: #18181b;
+      --muted: #52525b;
+      --muted2: #a1a1aa;
+      --grid-color: rgba(99, 102, 241, 0.05);
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      transition: background 0.4s ease, color 0.4s ease;
+      overflow-x: hidden;
+    }
+
+    .grid-bg {
+      background-image:
+
+        /* linear-gradient(rgba(128, 130, 244, 0.05) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(99,102,241,0.05) 1px, transparent 1px);
+      background-size: 44px 44px; */
+
+        linear-gradient(var(--grid-color) 1px, transparent 1px),
+        linear-gradient(90deg, var(--grid-color) 1px, transparent 1px);
+      background-size: 40px 40px;
+
+    }
+
+    #cursor-glow {
+      position: fixed;
+      width: 500px;
+      height: 500px;
+      border-radius: 50%;
+      pointer-events: none;
+      z-index: 0;
+      transform: translate(-50%, -50%);
+      transition: opacity 0.3s ease;
+      background: radial-gradient(circle, rgba(99, 102, 241, 0.12) 0%, transparent 65%);
+    }
+
+    html.light #cursor-glow {
+      background: radial-gradient(circle, rgba(99, 102, 241, 0.08) 0%, transparent 65%);
+    }
+
+    #particles-canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    nav {
+      background: rgba(9, 9, 11, 0.75);
+      backdrop-filter: blur(20px);
+      border-bottom: 1px solid var(--border);
+      transition: background 0.4s ease, border-color 0.4s ease;
+    }
+
+    html.light nav {
+      background: rgba(250, 250, 250, 0.8);
+    }
+
+    .glow-text {
+      text-shadow: 0 0 50px rgba(99, 102, 241, 0.4);
+    }
+
+    html.light .glow-text {
+      text-shadow: 0 0 30px rgba(99, 102, 241, 0.3);
+    }
+
+    .card-hover {
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      transition: all 0.35s ease;
+    }
+
+    .card-hover:hover {
+      border-color: var(--border-hover);
+      transform: translateY(-5px);
+      box-shadow: 0 24px 48px rgba(99, 102, 241, 0.1);
+    }
+
+    .btn-primary {
+      background: #6366f1;
+      transition: all 0.3s ease;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .btn-primary::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: -100%;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.18), transparent);
+      transition: left 0.5s ease;
+    }
+
+    .btn-primary:hover::before {
+      left: 100%;
+    }
+
+    .btn-primary:hover {
+      background: #4f46e5;
+      box-shadow: 0 0 35px rgba(99, 102, 241, 0.45);
+    }
+
+    .btn-ghost {
+      border: 1px solid var(--border);
+      color: var(--muted);
+      transition: all 0.3s ease;
+    }
+
+    .btn-ghost:hover {
+      border-color: var(--border-hover);
+      color: var(--text);
+    }
+
+    .tag {
+      border: 1px solid rgba(99, 102, 241, 0.3);
+      background: rgba(99, 102, 241, 0.08);
+      color: #818cf8;
+    }
+
+    .code-window {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      transition: background 0.4s ease, border-color 0.4s ease;
+    }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+
+    .feature-icon {
+      background: rgba(99, 102, 241, 0.1);
+      border: 1px solid rgba(99, 102, 241, 0.2);
+    }
+
+    .floating {
+      animation: float 6s ease-in-out infinite;
+    }
+
+    @keyframes float {
+
+      0%,
+      100% {
+        transform: translateY(0px);
+      }
+
+      50% {
+        transform: translateY(-14px);
+      }
+    }
+
+    .noise {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 999;
+      opacity: 0.02;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    }
+
+    #theme-toggle {
+      width: 38px;
+      height: 22px;
+      background: rgba(99, 102, 241, 0.2);
+      border: 1px solid rgba(99, 102, 241, 0.3);
+      border-radius: 999px;
+      cursor: pointer;
+      position: relative;
+      transition: all 0.3s ease;
+      flex-shrink: 0;
+    }
+
+    #theme-toggle::after {
+      content: '';
+      position: absolute;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: #6366f1;
+      top: 3px;
+      left: 3px;
+      transition: transform 0.3s ease;
+    }
+
+    html.light #theme-toggle::after {
+      transform: translateX(16px);
+    }
+
+    html.light #theme-toggle {
+      background: rgba(99, 102, 241, 0.15);
+    }
+
+    .oss-badge {
+      background: rgba(16, 185, 129, 0.08);
+      border: 1px solid rgba(16, 185, 129, 0.2);
+      color: #34d399;
+    }
+
+    .marquee-track {
+      display: flex;
+      gap: 2rem;
+      animation: marquee 20s linear infinite;
+      width: max-content;
+    }
+
+    @keyframes marquee {
+      from {
+        transform: translateX(0);
+      }
+
+      to {
+        transform: translateX(-50%);
+      }
+    }
+
+    ::-webkit-scrollbar {
+      width: 4px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: rgba(99, 102, 241, 0.3);
+      border-radius: 10px;
+    }
+
+    /* Typewriter cursor */
+    #tw-cursor {
+      animation: blink 1s step-end infinite;
+      font-weight: 300;
+      color: #6366f1;
+    }
+
+    @keyframes blink {
+      50% {
+        opacity: 0;
+      }
+    }
+
+    /* Typewriter text — fixed height so layout never jumps */
+    #typewriter-text {
+      display: inline-block;
+      min-height: 1.2em;
+      min-width: 4px;
+      vertical-align: bottom;
+    }
+
+    .contrib-card {
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      transition: all 0.3s ease;
+    }
+
+    .contrib-card:hover {
+      border-color: rgba(16, 185, 129, 0.4);
+      box-shadow: 0 0 30px rgba(16, 185, 129, 0.08);
+    }
+
+    .feature-card {
+      opacity: 1 !important;
+    }
+  </style>
+</head>
+
+<body>
+
+  <div class="noise"></div>
+  <div id="cursor-glow"></div>
+
+  <!-- ===== NAV ===== -->
+  <nav class="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-6 md:px-12 py-4">
+    <div class="flex items-center gap-2">
+      <div class="w-7 h-7 rounded-md bg-indigo-500 flex items-center justify-center">
+        <i class="fa-solid fa-code text-white text-xs"></i>
+      </div>
+      <span class="font-bold text-sm tracking-wider" style="color: var(--text);">StackRoom</span>
+      <span class="oss-badge text-xs px-2 py-0.5 rounded-full ml-1 hidden md:inline">
+        <i class="fa-brands fa-github mr-1"></i>Open Source
+      </span>
+    </div>
+
+    <div class="hidden md:flex items-center gap-8 text-xs" style="color: var(--muted);">
+      <a href="#features" class="hover:text-indigo-400 transition-colors" style="color: var(--muted);">Features</a>
+      <a href="#how" class="hover:text-indigo-400 transition-colors" style="color: var(--muted);">How it works</a>
+      <a href="#opensource" class="hover:text-indigo-400 transition-colors" style="color: var(--muted);">Open Source</a>
+      <a href="https://github.com/JigyansaJena/stack-room.dev" target="_blank"
+        class="flex items-center gap-1.5 hover:text-indigo-400 transition-colors" style="color: var(--muted);">
+        <i class="fa-brands fa-github"></i> GitHub
+      </a>
+    </div>
+
+    <div class="flex items-center gap-3">
+      <div class="hidden md:flex items-center gap-2">
+        <i class="fa-solid fa-moon text-xs" id="theme-icon" style="color: var(--muted);"></i>
+        <span class="text-xs" style="color: var(--muted);" id="theme-label">Dark</span>
+        <div id="theme-toggle" title="Toggle theme"></div>
+      </div>
+      <a href="/auth/" class="btn-primary text-xs font-medium px-4 py-2 rounded-lg text-white">
+        Get Started →
+      </a>
+    </div>
+  </nav>
+
+  <!-- ===== HERO ===== -->
+  <section
+    class="grid-bg min-h-screen flex flex-col items-center justify-center text-center px-6 pt-20 relative overflow-hidden">
+
+    <canvas id="particles-canvas"></canvas>
+
+    <!-- Glow blobs -->
+    <div
+      class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full pointer-events-none"
+      style="background: radial-gradient(circle, rgba(99,102,241,0.07) 0%, transparent 70%); filter: blur(60px); z-index: 0;">
+    </div>
+    <div class="absolute top-1/4 left-1/4 w-64 h-64 rounded-full pointer-events-none"
+      style="background: radial-gradient(circle, rgba(139,92,246,0.06) 0%, transparent 70%); filter: blur(40px); z-index: 0;">
+    </div>
+    <div class="absolute bottom-1/4 right-1/4 w-48 h-48 rounded-full pointer-events-none"
+      style="background: radial-gradient(circle, rgba(59,130,246,0.05) 0%, transparent 70%); filter: blur(30px); z-index: 0;">
+    </div>
+
+    <!-- Floating decorative badges -->
+    <div class="absolute top-32 left-12 hidden lg:block" style="z-index:2; animation: float 7s ease-in-out infinite;">
+      <div class="card-hover rounded-xl px-3 py-2 text-xs" style="backdrop-filter: blur(10px);">
+        <i class="fa-solid fa-circle-check text-green-400 mr-1"></i>
+        <span style="color:var(--muted)">Bug resolved by AI</span>
+      </div>
+    </div>
+    <div class="absolute top-48 right-16 hidden lg:block"
+      style="z-index:2; animation: float 5s ease-in-out infinite 1s;">
+      <div class="card-hover rounded-xl px-3 py-2 text-xs" style="backdrop-filter: blur(10px);">
+        <i class="fa-solid fa-circle text-indigo-400 mr-1 text-xs"></i>
+        <span style="color:var(--muted)">3 devs editing live</span>
+      </div>
+    </div>
+    <div class="absolute bottom-40 left-20 hidden lg:block"
+      style="z-index:2; animation: float 8s ease-in-out infinite 0.5s;">
+      <div class="tag rounded-xl px-3 py-2 text-xs">
+        @ai fix this loop
+      </div>
+    </div>
+    <div class="absolute bottom-32 right-24 hidden lg:block"
+      style="z-index:2; animation: float 6s ease-in-out infinite 2s;">
+      <div class="card-hover rounded-xl px-3 py-2 text-xs flex items-center gap-2" style="backdrop-filter: blur(10px);">
+        <div class="w-2 h-2 rounded-full bg-green-400 animate-pulse"></div>
+        <span style="color:var(--muted)">room-x7k9 online</span>
+      </div>
+    </div>
+
+    <!-- Hero content -->
+    <div class="relative" style="z-index: 3;">
+      <div id="hero-tag" class="inline-flex items-center gap-2 tag text-xs px-4 py-1.5 rounded-full mb-6 opacity-0">
+        <span class="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse inline-block"></span>
+        Open Source &middot; AI-Powered &middot; Real-time Collaboration
+      </div>
+
+      <h1 id="hero-title"
+        class="text-4xl md:text-6xl lg:text-7xl font-bold leading-tight tracking-tight mb-5 opacity-0">
+        Code Together.<br />
+        <span class="text-indigo-400 glow-text" id="typewriter-text">&nbsp;</span><span id="tw-cursor">|</span>
+      </h1>
+
+      <p id="hero-sub" class="text-sm md:text-base max-w-xl mx-auto mb-8 leading-relaxed opacity-0"
+        style="color: var(--muted);">
+        Real-time collaborative coding rooms with a Gemini-powered AI assistant that understands your code,
+        resolves bugs instantly, and keeps your team in sync.
+      </p>
+
+      <div id="hero-cta" class="flex flex-wrap items-center justify-center gap-3 mb-6 opacity-0">
+        <a href="/auth/" class="btn-primary px-6 py-3 rounded-xl text-sm font-medium text-white">
+          Start Coding Free →
+        </a>
+        <a href="https://github.com/JigyansaJena/stack-room.dev" target="_blank"
+          class="btn-ghost flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-medium"
+          style="color: var(--muted);">
+          <i class="fa-brands fa-github"></i> Star on GitHub
+        </a>
+        <a href="#how" class="btn-ghost text-sm px-5 py-3 rounded-xl" style="color: var(--muted);">
+          See how it works
+        </a>
+      </div>
+
+      <!-- Stats row -->
+      <div id="hero-stats" class="flex flex-wrap items-center justify-center gap-4 text-xs opacity-0"
+        style="color: var(--muted2);">
+        <span><i class="fa-regular fa-star text-indigo-400 mr-1"></i><span class="text-indigo-400 font-medium">Open
+            Source</span></span>
+        <span class="w-px h-3 inline-block" style="background: var(--border);"></span>
+        <span><i class="fa-solid fa-robot mr-1"></i>Gemini Powered</span>
+        <span class="w-px h-3 inline-block" style="background: var(--border);"></span>
+        <span><i class="fa-solid fa-fire mr-1"></i>Real-time Sync</span>
+        <span class="w-px h-3 inline-block" style="background: var(--border);"></span>
+        <span><i class="fa-solid fa-lock mr-1"></i>Google Auth</span>
+      </div>
+    </div>
+
+    <!-- Code window -->
+    <div id="hero-window" class="floating code-window mt-14 w-full max-w-2xl text-left opacity-0 relative"
+      style="z-index:3;">
+      <div class="flex items-center gap-2 px-4 py-3 border-b" style="border-color: var(--border);">
+        <div class="dot bg-red-500/70"></div>
+        <div class="dot bg-yellow-500/70"></div>
+        <div class="dot bg-green-500/70"></div>
+        <span class="text-xs ml-2" style="color: var(--muted2);">main.js — StackRoom</span>
+        <span class="ml-auto tag text-xs px-2 py-0.5 rounded">
+          <i class="fa-solid fa-circle text-green-400 text-xs mr-1"></i>3 online
+        </span>
+      </div>
+      <div class="p-4 text-xs leading-6" style="max-height: 200px; overflow: hidden;">
+        <div style="color: var(--muted2);">// collaborative session &middot; room-x7k9</div>
+        <div><span class="text-indigo-400">async function</span> <span class="text-green-400">fetchUserData</span><span
+            style="color:var(--text)">(userId) {</span></div>
+        <div class="pl-4"><span class="text-indigo-400">try</span> <span style="color:var(--text)">{</span></div>
+        <div class="pl-8"><span class="text-indigo-400">const</span> <span style="color:var(--text)">res = </span><span
+            class="text-indigo-400">await</span> <span class="text-green-400">fetch</span><span
+            style="color:var(--text)">(`/api/users/${userId}`);</span></div>
+        <div class="pl-8"><span class="text-indigo-400">return await</span> <span
+            style="color:var(--text)">res.</span><span class="text-green-400">json</span><span
+            style="color:var(--text)">();</span></div>
+        <div class="pl-4"><span style="color:var(--text)">}</span> <span class="text-indigo-400">catch</span> <span
+            style="color:var(--text)">(err) {</span></div>
+        <div class="pl-8 flex items-center gap-2">
+          <span style="color:var(--text)">console.</span><span class="text-red-400">error</span><span
+            style="color:var(--text)">(err);</span>
+          <span class="tag text-xs px-2 rounded animate-pulse">@ai reviewing...</span>
+        </div>
+        <div class="pl-4"><span style="color:var(--text)">}</span></div>
+        <div><span style="color:var(--text)">}</span></div>
+      </div>
+      <div class="border-t px-4 py-3 flex items-start gap-3" style="border-color: var(--border);">
+        <div class="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 feature-icon">
+          <i class="fa-solid fa-wand-magic-sparkles text-indigo-400 text-xs"></i>
+        </div>
+        <p class="text-xs leading-5" style="color: var(--muted);">
+          <span class="text-indigo-400 font-medium">AI &middot; </span>
+          Missing error handling for non-OK responses. Add
+          <span class="text-green-400">if (!res.ok) throw new Error(res.statusText)</span> before parsing JSON.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== MARQUEE ===== -->
+  <div class="py-6 border-y overflow-hidden" style="border-color: var(--border);">
+    <div class="marquee-track" id="marquee-track">
+      <span class="flex items-center gap-2 text-xs px-4 whitespace-nowrap" style="color: var(--muted2);"><i
+          class="fa-solid fa-diamond text-indigo-400 text-xs"></i> Firebase Realtime</span>
+      <span class="flex items-center gap-2 text-xs px-4 whitespace-nowrap" style="color: var(--muted2);"><i
+          class="fa-solid fa-diamond text-indigo-400 text-xs"></i> Gemini AI</span>
+      <span class="flex items-center gap-2 text-xs px-4 whitespace-nowrap" style="color: var(--muted2);"><i
+          class="fa-solid fa-diamond text-indigo-400 text-xs"></i> CodeMirror 6</span>
+      <span class="flex items-center gap-2 text-xs px-4 whitespace-nowrap" style="color: var(--muted2);"><i
+          class="fa-solid fa-diamond text-indigo-400 text-xs"></i> Google OAuth</span>
+      <span class="flex items-center gap-2 text-xs px-4 whitespace-nowrap" style="color: var(--muted2);"><i
+          class="fa-solid fa-diamond text-indigo-400 text-xs"></i> Tailwind CSS</span>
+      <span class="flex items-center gap-2 text-xs px-4 whitespace-nowrap" style="color: var(--muted2);"><i
+          class="fa-solid fa-diamond text-indigo-400 text-xs"></i> Highlight.js</span>
+      <span class="flex items-center gap-2 text-xs px-4 whitespace-nowrap" style="color: var(--muted2);"><i
+          class="fa-solid fa-diamond text-indigo-400 text-xs"></i> Open Source</span>
+      <span class="flex items-center gap-2 text-xs px-4 whitespace-nowrap" style="color: var(--muted2);"><i
+          class="fa-solid fa-diamond text-indigo-400 text-xs"></i> MIT License</span>
+      <!-- Duplicated for seamless loop -->
+      <span class="flex items-center gap-2 text-xs px-4 whitespace-nowrap" style="color: var(--muted2);"><i
+          class="fa-solid fa-diamond text-indigo-400 text-xs"></i> Firebase Realtime</span>
+      <span class="flex items-center gap-2 text-xs px-4 whitespace-nowrap" style="color: var(--muted2);"><i
+          class="fa-solid fa-diamond text-indigo-400 text-xs"></i> Gemini AI</span>
+      <span class="flex items-center gap-2 text-xs px-4 whitespace-nowrap" style="color: var(--muted2);"><i
+          class="fa-solid fa-diamond text-indigo-400 text-xs"></i> CodeMirror 6</span>
+      <span class="flex items-center gap-2 text-xs px-4 whitespace-nowrap" style="color: var(--muted2);"><i
+          class="fa-solid fa-diamond text-indigo-400 text-xs"></i> Google OAuth</span>
+      <span class="flex items-center gap-2 text-xs px-4 whitespace-nowrap" style="color: var(--muted2);"><i
+          class="fa-solid fa-diamond text-indigo-400 text-xs"></i> Tailwind CSS</span>
+      <span class="flex items-center gap-2 text-xs px-4 whitespace-nowrap" style="color: var(--muted2);"><i
+          class="fa-solid fa-diamond text-indigo-400 text-xs"></i> Highlight.js</span>
+      <span class="flex items-center gap-2 text-xs px-4 whitespace-nowrap" style="color: var(--muted2);"><i
+          class="fa-solid fa-diamond text-indigo-400 text-xs"></i> Open Source</span>
+      <span class="flex items-center gap-2 text-xs px-4 whitespace-nowrap" style="color: var(--muted2);"><i
+          class="fa-solid fa-diamond text-indigo-400 text-xs"></i> MIT License</span>
+    </div>
+  </div>
+
+  <!-- ===== FEATURES ===== -->
+  <section id="features" class="py-24 px-6 md:px-12 max-w-6xl mx-auto">
+    <div class="text-center mb-16">
+      <p class="text-xs text-indigo-400 tracking-widest uppercase mb-3">Everything you need</p>
+      <h2 class="text-3xl md:text-4xl font-bold" style="color: var(--text);">Built for developer teams</h2>
+      <p class="text-sm mt-3 max-w-md mx-auto" style="color: var(--muted);">No bloat. No distractions. Just the tools
+        your team needs to ship faster.</p>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+
+      <div class="card-hover rounded-xl p-6 feature-card">
+        <div class="feature-icon w-10 h-10 rounded-lg flex items-center justify-center mb-4">
+          <i class="fa-regular fa-message text-indigo-400 text-base"></i>
+        </div>
+        <h3 class="font-semibold text-sm mb-2" style="color: var(--text);">Real-time Chat Rooms</h3>
+        <p class="text-xs leading-5" style="color: var(--muted);">Structured rooms with roles, invite links, and live
+          presence. Tag teammates with <span class="text-indigo-400">@</span> or invoke AI with <span
+            class="text-indigo-400">@ai</span>.</p>
+      </div>
+
+      <div class="card-hover rounded-xl p-6 feature-card">
+        <div class="feature-icon w-10 h-10 rounded-lg flex items-center justify-center mb-4">
+          <i class="fa-solid fa-bolt text-indigo-400 text-base"></i>
+        </div>
+        <h3 class="font-semibold text-sm mb-2" style="color: var(--text);">Instant AI Bug Resolution</h3>
+        <p class="text-xs leading-5" style="color: var(--muted);">Powered by Gemini 1.5 Flash. Context-aware fixes in
+          seconds — AI reads your full conversation for smarter answers.</p>
+      </div>
+
+      <div class="card-hover rounded-xl p-6 feature-card">
+        <div class="feature-icon w-10 h-10 rounded-lg flex items-center justify-center mb-4">
+          <i class="fa-solid fa-code text-indigo-400 text-base"></i>
+        </div>
+        <h3 class="font-semibold text-sm mb-2" style="color: var(--text);">Collaborative Code Editor</h3>
+        <p class="text-xs leading-5" style="color: var(--muted);">Live multi-user editor with syntax highlighting.
+          Upload files and edit together — every keystroke synced via Firestore.</p>
+      </div>
+
+      <div class="card-hover rounded-xl p-6 feature-card">
+        <div class="feature-icon w-10 h-10 rounded-lg flex items-center justify-center mb-4">
+          <i class="fa-solid fa-file-code text-indigo-400 text-base"></i>
+        </div>
+        <h3 class="font-semibold text-sm mb-2" style="color: var(--text);">Smart Code Snippets</h3>
+        <p class="text-xs leading-5" style="color: var(--muted);">Auto language detection, colored syntax, and a hidden
+          AI verdict per snippet — tap to reveal analysis in a modal.</p>
+      </div>
+
+      <div class="card-hover rounded-xl p-6 feature-card">
+        <div class="feature-icon w-10 h-10 rounded-lg flex items-center justify-center mb-4">
+          <i class="fa-solid fa-users text-indigo-400 text-base"></i>
+        </div>
+        <h3 class="font-semibold text-sm mb-2" style="color: var(--text);">Roles & Permissions</h3>
+        <p class="text-xs leading-5" style="color: var(--muted);">Admins assign roles per member — Admin, Member, or
+          Viewer. Share invite links and manage access instantly.</p>
+      </div>
+
+      <div class="card-hover rounded-xl p-6 feature-card">
+        <div class="feature-icon w-10 h-10 rounded-lg flex items-center justify-center mb-4">
+          <i class="fa-solid fa-paperclip text-indigo-400 text-base"></i>
+        </div>
+        <h3 class="font-semibold text-sm mb-2" style="color: var(--text);">File Attachments & Storage</h3>
+        <p class="text-xs leading-5" style="color: var(--muted);">Share images, videos, ZIPs, PDFs, and code files in
+          chat. Upload source code directly into the collaborative editor.</p>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ===== HOW IT WORKS ===== -->
+  <section id="how" class="py-24 px-6 md:px-12 max-w-4xl mx-auto">
+    <div class="text-center mb-16">
+      <p class="text-xs text-indigo-400 tracking-widest uppercase mb-3">Simple workflow</p>
+      <h2 class="text-3xl md:text-4xl font-bold" style="color: var(--text);">Up in 30 seconds</h2>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+      <div class="text-center step-item">
+        <div class="w-12 h-12 rounded-xl feature-icon flex items-center justify-center mx-auto mb-4">
+          <span class="text-indigo-400 font-bold text-sm">01</span>
+        </div>
+        <h3 class="font-semibold text-sm mb-2" style="color: var(--text);">Sign in with Google</h3>
+        <p class="text-xs leading-5" style="color: var(--muted);">One-click OAuth. No passwords, no forms. Secure and
+          instant.</p>
+      </div>
+      <div class="text-center step-item">
+        <div class="w-12 h-12 rounded-xl feature-icon flex items-center justify-center mx-auto mb-4">
+          <span class="text-indigo-400 font-bold text-sm">02</span>
+        </div>
+        <h3 class="font-semibold text-sm mb-2" style="color: var(--text);">Create or Join a Room</h3>
+        <p class="text-xs leading-5" style="color: var(--muted);">Name your room, link your GitHub repo, share the
+          invite code.</p>
+      </div>
+      <div class="text-center step-item">
+        <div class="w-12 h-12 rounded-xl feature-icon flex items-center justify-center mx-auto mb-4">
+          <span class="text-indigo-400 font-bold text-sm">03</span>
+        </div>
+        <h3 class="font-semibold text-sm mb-2" style="color: var(--text);">Code & Chat Together</h3>
+        <p class="text-xs leading-5" style="color: var(--muted);">Real-time editor, team chat, and AI support — all in
+          one screen.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== OPEN SOURCE ===== -->
+  <section id="opensource" class="py-24 px-6 md:px-12 max-w-5xl mx-auto">
+    <div class="contrib-card rounded-2xl p-10 md:p-14 text-center relative overflow-hidden">
+
+      <div class="absolute inset-0 pointer-events-none"
+        style="background: radial-gradient(ellipse at 50% 0%, rgba(16,185,129,0.06) 0%, transparent 60%);"></div>
+
+      <div class="oss-badge inline-flex items-center gap-2 text-xs px-3 py-1.5 rounded-full mb-6">
+        <i class="fa-brands fa-github"></i> Free &amp; Open Source &middot; MIT License
+      </div>
+
+      <h2 class="text-3xl md:text-4xl font-bold mb-4 relative" style="color: var(--text);">
+        Built in the open.<br />
+        <span class="text-green-400">Improved by the community.</span>
+      </h2>
+      <p class="text-sm leading-relaxed mb-10 max-w-lg mx-auto relative" style="color: var(--muted);">
+        StackRoom is completely open source. Star the repo, report bugs, suggest features, or submit a PR —
+        every contribution makes the tool better for thousands of developers.
+      </p>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-10 text-left relative">
+        <div class="card-hover rounded-xl p-5">
+          <i class="fa-solid fa-bug text-xl text-indigo-400 mb-3 block"></i>
+          <h4 class="font-semibold text-sm mb-1" style="color: var(--text);">Report Bugs</h4>
+          <p class="text-xs leading-5" style="color: var(--muted);">Found an issue? Open a GitHub issue with steps to
+            reproduce.</p>
+        </div>
+        <div class="card-hover rounded-xl p-5">
+          <i class="fa-solid fa-lightbulb text-xl text-indigo-400 mb-3 block"></i>
+          <h4 class="font-semibold text-sm mb-1" style="color: var(--text);">Suggest Features</h4>
+          <p class="text-xs leading-5" style="color: var(--muted);">Have an idea? Start a discussion in the GitHub repo.
+          </p>
+        </div>
+        <div class="card-hover rounded-xl p-5">
+          <i class="fa-solid fa-code-pull-request text-xl text-indigo-400 mb-3 block"></i>
+          <h4 class="font-semibold text-sm mb-1" style="color: var(--text);">Submit a PR</h4>
+          <p class="text-xs leading-5" style="color: var(--muted);">Fork, code, and submit a pull request. All skill
+            levels welcome.</p>
+        </div>
+      </div>
+
+      <div class="flex flex-wrap items-center justify-center gap-3 relative">
+        <a href="https://github.com/JigyansaJena/stack-room.dev" target="_blank"
+          class="btn-primary flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-medium text-white">
+          <i class="fa-brands fa-github"></i> View on GitHub
+        </a>
+        <a href="https://github.com/JigyansaJena/stack-room.dev/fork" target="_blank"
+          class="btn-ghost flex items-center gap-2 px-5 py-3 rounded-xl text-sm" style="color: var(--muted);">
+          <i class="fa-solid fa-code-fork"></i> Fork &amp; Contribute
+        </a>
+        <a href="https://github.com/JigyansaJena/stack-room.dev/issues/new" target="_blank"
+          class="btn-ghost flex items-center gap-2 px-5 py-3 rounded-xl text-sm" style="color: var(--muted);">
+          <i class="fa-regular fa-clipboard"></i> Open an Issue
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== BOTTOM CTA ===== -->
+  <section class="py-24 px-6 text-center relative">
+    <div class="absolute inset-0 pointer-events-none"
+      style="background: radial-gradient(ellipse at center, rgba(99,102,241,0.07) 0%, transparent 70%);"></div>
+    <h2 class="text-3xl md:text-4xl font-bold mb-4 relative" style="color: var(--text);">Ready to build together?</h2>
+    <p class="text-sm mb-8 relative" style="color: var(--muted);">Free forever. Open source. No credit card needed.</p>
+    <a href="/auth/" class="btn-primary inline-block px-8 py-4 rounded-xl text-sm font-medium text-white relative">
+      Get Started — It's Free →
+    </a>
+  </section>
+
+  <!-- ===== FOOTER ===== -->
+  <footer class="border-t px-6 md:px-12 py-8" style="border-color: var(--border);">
+    <div class="flex flex-col md:flex-row items-center justify-between gap-4">
+      <div class="flex items-center gap-2">
+        <div class="w-5 h-5 rounded bg-indigo-500 flex items-center justify-center">
+          <i class="fa-solid fa-code text-white text-xs"></i>
+        </div>
+        <span class="text-xs" style="color: var(--muted2);">StackRoom &copy; 2026</span>
+        <span class="oss-badge text-xs px-2 py-0.5 rounded-full ml-2">MIT License</span>
+      </div>
+      <div class="flex items-center gap-6 text-xs" style="color: var(--muted2);">
+        <a href="https://github.com/JigyansaJena/stack-room.dev" target="_blank"
+          class="hover:text-indigo-400 transition-colors flex items-center gap-1">
+          <i class="fa-brands fa-github"></i> GitHub
+        </a>
+        <a href="#" class="hover:text-indigo-400 transition-colors">Docs</a>
+        <a href="#" class="hover:text-indigo-400 transition-colors">Changelog</a>
+      </div>
+      <span class="text-xs" style="color: var(--muted2);">
+        Built for hackers, by hackers. <i class="fa-solid fa-heart text-indigo-400 ml-1"></i>
+      </span>
+    </div>
+  </footer>
+
+  <script>
+    gsap.registerPlugin(ScrollTrigger);
+
+    /* ===== THEME TOGGLE ===== */
+    const html = document.documentElement;
+    let isDark = true;
+
+    function applyTheme(dark) {
+      isDark = dark;
+      if (dark) {
+        html.classList.add('dark');
+        html.classList.remove('light');
+        $('#theme-label').text('Dark');
+        $('#theme-icon').removeClass('fa-sun').addClass('fa-moon');
+      } else {
+        html.classList.remove('dark');
+        html.classList.add('light');
+        $('#theme-label').text('Light');
+        $('#theme-icon').removeClass('fa-moon').addClass('fa-sun');
+      }
+      localStorage.setItem('theme', dark ? 'dark' : 'light');
+    }
+
+    const saved = localStorage.getItem('theme');
+    applyTheme(saved !== 'light');
+    $('#theme-toggle').on('click', () => applyTheme(!isDark));
+
+    /* ===== CURSOR GLOW ===== */
+    const cursorGlow = document.getElementById('cursor-glow');
+    let mouseX = window.innerWidth / 2, mouseY = window.innerHeight / 2;
+    let currentX = mouseX, currentY = mouseY;
+
+    document.addEventListener('mousemove', (e) => {
+      mouseX = e.clientX;
+      mouseY = e.clientY;
+    });
+
+    function animateCursor() {
+      currentX += (mouseX - currentX) * 0.08;
+      currentY += (mouseY - currentY) * 0.08;
+      cursorGlow.style.left = currentX + 'px';
+      cursorGlow.style.top = currentY + 'px';
+      requestAnimationFrame(animateCursor);
+    }
+    animateCursor();
+
+    /* ===== PARTICLES ===== */
+    const canvas = document.getElementById('particles-canvas');
+    const ctx = canvas.getContext('2d');
+
+    function resizeCanvas() {
+      canvas.width = canvas.parentElement.offsetWidth;
+      canvas.height = canvas.parentElement.offsetHeight;
+    }
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+
+    class Particle {
+      constructor() { this.reset(); }
+      reset() {
+        this.x = Math.random() * canvas.width;
+        this.y = Math.random() * canvas.height;
+        this.size = Math.random() * 1.5 + 0.3;
+        this.speedX = (Math.random() - 0.5) * 0.4;
+        this.speedY = (Math.random() - 0.5) * 0.4;
+        this.opacity = Math.random() * 0.4 + 0.1;
+        this.pulse = Math.random() * Math.PI * 2;
+      }
+      update() {
+        this.x += this.speedX;
+        this.y += this.speedY;
+        this.pulse += 0.02;
+        const dx = mouseX - this.x;
+        const dy = mouseY - this.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < 150) {
+          this.x += dx * 0.003;
+          this.y += dy * 0.003;
+        }
+        if (this.x < 0 || this.x > canvas.width || this.y < 0 || this.y > canvas.height) this.reset();
+      }
+      draw() {
+        const alpha = this.opacity * (0.7 + 0.3 * Math.sin(this.pulse));
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(99, 102, 241, ${alpha})`;
+        ctx.fill();
+      }
+    }
+
+    const particles = [];
+    for (let i = 0; i < 80; i++) particles.push(new Particle());
+
+    function drawLines() {
+      for (let i = 0; i < particles.length; i++) {
+        for (let j = i + 1; j < particles.length; j++) {
+          const dx = particles[i].x - particles[j].x;
+          const dy = particles[i].y - particles[j].y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < 100) {
+            ctx.beginPath();
+            ctx.moveTo(particles[i].x, particles[i].y);
+            ctx.lineTo(particles[j].x, particles[j].y);
+            ctx.strokeStyle = `rgba(99, 102, 241, ${0.08 * (1 - dist / 100)})`;
+            ctx.lineWidth = 0.5;
+            ctx.stroke();
+          }
+        }
+      }
+    }
+
+    function animateParticles() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      particles.forEach(p => { p.update(); p.draw(); });
+      drawLines();
+      requestAnimationFrame(animateParticles);
+    }
+    animateParticles();
+
+    /* ===== TYPEWRITER ===== */
+    const phrases = ['Debug Faster.', 'Ship Together.', 'Think Clearer.', 'Build Better.'];
+    let phraseIdx = 0, charIdx = 0, deleting = false;
+    const typeEl = document.getElementById('typewriter-text');
+
+    function typeLoop() {
+      const phrase = phrases[phraseIdx];
+      if (!deleting) {
+        typeEl.textContent = phrase.slice(0, charIdx + 1) || '\u00A0';
+        charIdx++;
+        if (charIdx === phrase.length) {
+          deleting = true;
+          setTimeout(typeLoop, 2000);
+          return;
+        }
+        setTimeout(typeLoop, 80);
+      } else {
+        const remaining = phrase.slice(0, charIdx - 1);
+        typeEl.textContent = remaining || '\u00A0'; // non-breaking space keeps height stable
+        charIdx--;
+        if (charIdx === 0) {
+          deleting = false;
+          phraseIdx = (phraseIdx + 1) % phrases.length;
+          setTimeout(typeLoop, 300);
+          return;
+        }
+        setTimeout(typeLoop, 45);
+      }
+    }
+
+    /* ===== HERO ENTRANCE ===== */
+    gsap.set(['#hero-title', '#hero-sub', '#hero-cta', '#hero-stats', '#hero-window'], { y: 30, opacity: 0 });
+
+    const tl = gsap.timeline({ delay: 0.3, onComplete: typeLoop });
+    tl.to('#hero-tag', { opacity: 1, y: 0, duration: 0.6, ease: 'power3.out' })
+      .to('#hero-title', { opacity: 1, y: 0, duration: 0.7, ease: 'power3.out' }, '-=0.3')
+      .to('#hero-sub', { opacity: 1, y: 0, duration: 0.6, ease: 'power3.out' }, '-=0.4')
+      .to('#hero-cta', { opacity: 1, y: 0, duration: 0.6, ease: 'power3.out' }, '-=0.3')
+      .to('#hero-stats', { opacity: 1, y: 0, duration: 0.5, ease: 'power3.out' }, '-=0.3')
+      .to('#hero-window', { opacity: 1, y: 0, duration: 0.8, ease: 'power3.out' }, '-=0.2');
+
+    /* ===== SCROLL ANIMATIONS ===== */
+    gsap.from('.feature-card', {
+      scrollTrigger: { trigger: '#features', start: 'top 80%' },
+      opacity: 0, y: 40, duration: 0.7, stagger: 0, ease: 'power3.out',
+      onStart: function () {
+        document.querySelectorAll('.feature-card').forEach(el => {
+          el.style.visibility = 'visible';
+        });
+      }
+    });
+
+    gsap.from('.step-item', {
+      scrollTrigger: { trigger: '#how', start: 'top 80%' },
+      opacity: 0, y: 30, duration: 0.6, stagger: 0.15, ease: 'power3.out'
+    });
+gsap.from('#opensource .contrib-card .card-hover', {
+  scrollTrigger: {
+    trigger: '#opensource',
+    start: 'top 75%',
+    once: true,
+    onEnter: () => {
+      document.querySelectorAll('#opensource .card-hover').forEach(el => {
+        el.style.opacity = '1';
+      });
+    }
+  },
+  opacity: 0, y: 30, duration: 0.6, stagger: 0, ease: 'power3.out'
+});
+
+    /* ===== CODE WINDOW TILT ===== */
+    $('#hero-window').on('mousemove', function (e) {
+      const rect = this.getBoundingClientRect();
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top + rect.height / 2;
+      const rx = (e.clientY - cy) / rect.height * 8;
+      const ry = -(e.clientX - cx) / rect.width * 8;
+      gsap.to(this, { rotateX: rx, rotateY: ry, duration: 0.4, ease: 'power2.out', transformPerspective: 800 });
+    }).on('mouseleave', function () {
+      gsap.to(this, { rotateX: 0, rotateY: 0, duration: 0.6, ease: 'power2.out' });
+    });
+
+    /* ===== SMOOTH SCROLL ===== */
+    $('a[href^="#"]').on('click', function (e) {
+      e.preventDefault();
+      const target = $($(this).attr('href'));
+      if (target.length) $('html, body').animate({ scrollTop: target.offset().top - 80 }, 600);
+    });
+  </script>
+</body>
+
+</html>

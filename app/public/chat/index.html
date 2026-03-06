@@ -1,0 +1,3208 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>StackRoom — Chat</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: { extend: { fontFamily: { mono: ['JetBrains Mono', 'monospace'] } } }
+        }
+    </script>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&display=swap"
+        rel="stylesheet" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+    <!-- CodeMirror -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/dracula.min.css" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/javascript/javascript.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/python/python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/clike/clike.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/xml/xml.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/css/css.min.js"></script>
+    <!-- Marked for markdown -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
+    <!-- highlight.js for AI code blocks -->
+    <link rel="stylesheet"
+        href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+
+    <style>
+        * {
+            font-family: 'JetBrains Mono', monospace;
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        :root {
+            --bg: #09090b;
+            --bg2: #111113;
+            --bg3: rgba(255, 255, 255, 0.03);
+            --bg4: rgba(255, 255, 255, 0.05);
+            --border: rgba(255, 255, 255, 0.06);
+            --border2: rgba(255, 255, 255, 0.1);
+            --text: #f4f4f5;
+            --muted: #71717a;
+            --muted2: #52525b;
+            --indigo: #6366f1;
+            --indigo2: #818cf8;
+            --indigo3: rgba(99, 102, 241, 0.1);
+        }
+
+        html.light {
+            --bg: #fafafa;
+            --bg2: #f4f4f5;
+            --bg3: rgba(0, 0, 0, 0.02);
+            --bg4: rgba(0, 0, 0, 0.04);
+            --border: rgba(0, 0, 0, 0.08);
+            --border2: rgba(0, 0, 0, 0.12);
+            --text: #18181b;
+            --muted: #52525b;
+            --muted2: #a1a1aa;
+        }
+
+        html,
+        body {
+            height: 100%;
+            overflow: hidden;
+            background: var(--bg);
+            color: var(--text);
+        }
+
+        /* ── Page loader ── */
+        #page-loader {
+            position: fixed;
+            inset: 0;
+            z-index: 9999;
+            background: var(--bg);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 16px;
+            transition: opacity 0.4s ease;
+        }
+
+        #page-loader.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .loader-ring {
+            width: 36px;
+            height: 36px;
+            border: 3px solid rgba(99, 102, 241, 0.15);
+            border-top-color: #6366f1;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        /* ── Layout ── */
+        #app {
+            display: flex;
+            height: 100vh;
+            width: 100vw;
+            overflow: hidden;
+        }
+
+        /* ── Sidebar ── */
+        #sidebar {
+            width: 260px;
+            min-width: 200px;
+            max-width: 320px;
+            background: var(--bg2);
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
+            position: relative;
+            transition: width 0.3s ease;
+        }
+
+        #sidebar.collapsed {
+            width: 0;
+            min-width: 0;
+            overflow: hidden;
+        }
+
+        /* ── Main area ── */
+        #main {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            min-width: 0;
+        }
+
+        /* ── Top bar ── */
+        #topbar {
+            height: 52px;
+            background: var(--bg2);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            padding: 0 16px;
+            gap: 12px;
+            flex-shrink: 0;
+        }
+
+        /* ── Tabs bar ── */
+        #tabs-bar {
+            height: 44px;
+            background: var(--bg);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            padding: 0 12px;
+            gap: 4px;
+            flex-shrink: 0;
+        }
+
+        .tab-item {
+            height: 32px;
+            padding: 0 14px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            color: var(--muted);
+            border: 1px solid transparent;
+            white-space: nowrap;
+            user-select: none;
+        }
+
+        .tab-item:hover {
+            color: var(--text);
+            background: var(--bg3);
+        }
+
+        .tab-item.active {
+            color: var(--indigo2);
+            background: var(--indigo3);
+            border-color: rgba(99, 102, 241, 0.2);
+        }
+
+        .tab-item .tab-close {
+            width: 16px;
+            height: 16px;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 9px;
+            opacity: 0;
+            transition: all 0.2s ease;
+        }
+
+        .tab-item:hover .tab-close {
+            opacity: 1;
+        }
+
+        .tab-item .tab-close:hover {
+            background: rgba(239, 68, 68, 0.2);
+            color: #f87171;
+        }
+
+        /* ── Panels container ── */
+        #panels {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+            min-height: 0;
+        }
+
+        /* ── Panel ── */
+        .panel-wrap {
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            position: relative;
+            min-width: 0;
+        }
+
+        .panel-wrap.collapsed {
+            width: 0 !important;
+            min-width: 0 !important;
+            overflow: hidden;
+        }
+
+        /* ── Panel header ── */
+        .panel-header {
+            height: 40px;
+            padding: 0 14px;
+            background: var(--bg2);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-shrink: 0;
+            gap: 8px;
+        }
+
+        .panel-title {
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--muted);
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+        }
+
+        /* ── Resize handle ── */
+        .resize-handle {
+            width: 4px;
+            background: transparent;
+            cursor: col-resize;
+            flex-shrink: 0;
+            transition: background 0.2s ease;
+            position: relative;
+            z-index: 10;
+        }
+
+        .resize-handle:hover,
+        .resize-handle.dragging {
+            background: var(--indigo);
+        }
+
+        /* ── Icon button ── */
+        .icon-btn {
+            width: 28px;
+            height: 28px;
+            border-radius: 7px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            color: var(--muted);
+            border: 1px solid transparent;
+            background: transparent;
+            flex-shrink: 0;
+        }
+
+        .icon-btn:hover {
+            background: var(--bg4);
+            color: var(--text);
+            border-color: var(--border);
+        }
+
+        .icon-btn.active {
+            background: var(--indigo3);
+            color: var(--indigo2);
+            border-color: rgba(99, 102, 241, 0.2);
+        }
+
+        .icon-btn.danger:hover {
+            background: rgba(239, 68, 68, 0.1);
+            color: #f87171;
+            border-color: rgba(239, 68, 68, 0.2);
+        }
+
+        /* ─────────────────── CHAT PANEL ─────────────────── */
+        #chat-panel {
+            flex: 1;
+        }
+
+        #messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        #messages::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        #messages::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        #messages::-webkit-scrollbar-thumb {
+            background: var(--border2);
+            border-radius: 4px;
+        }
+
+        /* Message */
+        .msg {
+            display: flex;
+            gap: 10px;
+            padding: 6px 8px;
+            border-radius: 10px;
+            transition: background 0.15s ease;
+            position: relative;
+            group: true;
+        }
+
+        .msg:hover {
+            background: var(--bg3);
+        }
+
+        .msg:hover .msg-actions {
+            opacity: 1;
+        }
+
+        .msg.highlight {
+            background: rgba(99, 102, 241, 0.08);
+        }
+
+        .msg-avatar {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            flex-shrink: 0;
+            background: rgba(99, 102, 241, 0.15);
+            border: 1px solid rgba(99, 102, 241, 0.2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+            font-weight: 600;
+            color: var(--indigo2);
+            overflow: hidden;
+            margin-top: 2px;
+        }
+
+        .msg-avatar img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .msg-body {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .msg-meta {
+            display: flex;
+            align-items: baseline;
+            gap: 8px;
+            margin-bottom: 3px;
+        }
+
+        .msg-name {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text);
+        }
+
+        .msg-name.ai {
+            color: #a78bfa;
+        }
+
+        .msg-name.system {
+            color: var(--muted);
+        }
+
+        .msg-time {
+            font-size: 10px;
+            color: var(--muted2);
+        }
+
+        .msg-text {
+            font-size: 13px;
+            color: var(--text);
+            line-height: 1.6;
+            word-break: break-word;
+        }
+
+        .msg-text.deleted {
+            color: var(--muted2);
+            font-style: italic;
+        }
+
+        /* Mention */
+        .mention-user {
+            color: #60a5fa;
+            background: rgba(96, 165, 250, 0.1);
+            border-radius: 4px;
+            padding: 0 4px;
+        }
+
+        .mention-ai {
+            color: #a78bfa;
+            background: rgba(167, 139, 250, 0.1);
+            border-radius: 4px;
+            padding: 0 4px;
+        }
+
+        /* Reply quote */
+        .reply-quote {
+            border-left: 2px solid var(--indigo);
+            background: var(--indigo3);
+            border-radius: 0 6px 6px 0;
+            padding: 4px 10px;
+            margin-bottom: 6px;
+            font-size: 11px;
+            color: var(--muted);
+            cursor: pointer;
+        }
+
+        .reply-quote strong {
+            color: var(--indigo2);
+        }
+
+        /* Message actions */
+        .msg-actions {
+            position: absolute;
+            right: 8px;
+            top: 4px;
+            display: flex;
+            gap: 2px;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+            background: var(--bg2);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 3px;
+        }
+
+        /* Code snippet in chat */
+        .code-snippet {
+            background: #0d0d0f;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            overflow: hidden;
+            margin-top: 6px;
+        }
+
+        .code-snippet-header {
+            background: rgba(255, 255, 255, 0.03);
+            padding: 6px 12px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid var(--border);
+            font-size: 10px;
+            color: var(--muted);
+        }
+
+        .code-snippet pre {
+            padding: 12px;
+            overflow-x: auto;
+            font-size: 12px;
+            line-height: 1.6;
+        }
+
+        /* ── Chat input area ── */
+        #chat-input-area {
+            border-top: 1px solid var(--border);
+            padding: 12px;
+            flex-shrink: 0;
+        }
+
+        /* Reply bar */
+        #reply-bar {
+            display: none;
+            background: var(--indigo3);
+            border: 1px solid rgba(99, 102, 241, 0.2);
+            border-radius: 8px;
+            padding: 6px 12px;
+            margin-bottom: 8px;
+            font-size: 11px;
+            color: var(--muted);
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+        }
+
+        #reply-bar.show {
+            display: flex;
+        }
+
+        #reply-bar strong {
+            color: var(--indigo2);
+        }
+
+        /* Input box */
+        #chat-input-box {
+            background: var(--bg3);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            transition: border-color 0.3s ease;
+        }
+
+        #chat-input-box:focus-within {
+            border-color: rgba(99, 102, 241, 0.4);
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.08);
+        }
+
+        #chat-input {
+            width: 100%;
+            background: transparent;
+            border: none;
+            outline: none;
+            color: var(--text);
+            font-size: 13px;
+            padding: 10px 14px;
+            font-family: 'JetBrains Mono', monospace;
+            resize: none;
+            line-height: 1.5;
+            max-height: 120px;
+            overflow-y: auto;
+        }
+
+        #chat-input::placeholder {
+            color: var(--muted2);
+        }
+
+        .input-toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 4px 8px 6px;
+            gap: 4px;
+        }
+
+        .input-toolbar-left {
+            display: flex;
+            gap: 2px;
+        }
+
+        /* Send button */
+        #send-btn {
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            background: var(--indigo);
+            border: none;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 12px;
+            transition: all 0.2s ease;
+            flex-shrink: 0;
+        }
+
+        #send-btn:hover {
+            background: #4f46e5;
+        }
+
+        #send-btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        /* Mention dropdown */
+        #mention-dropdown {
+            position: absolute;
+            bottom: 100%;
+            left: 12px;
+            right: 12px;
+            background: var(--bg2);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            overflow: hidden;
+            display: none;
+            z-index: 100;
+            box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.3);
+        }
+
+        #mention-dropdown.show {
+            display: block;
+        }
+
+        .mention-item {
+            padding: 8px 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            transition: background 0.15s ease;
+            font-size: 12px;
+        }
+
+        .mention-item:hover,
+        .mention-item.selected {
+            background: var(--indigo3);
+        }
+
+        .mention-item .mention-avatar {
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            background: rgba(99, 102, 241, 0.2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 9px;
+            font-weight: 600;
+            color: var(--indigo2);
+            flex-shrink: 0;
+            overflow: hidden;
+        }
+
+        .mention-item .mention-avatar img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        /* ─────────────────── CODE PANEL ─────────────────── */
+        #code-panel {
+            display: none;
+        }
+
+        .CodeMirror {
+            height: 100% !important;
+            font-family: 'JetBrains Mono', monospace !important;
+            font-size: 13px !important;
+            background: var(--bg) !important;
+            line-height: 1.6 !important;
+        }
+
+        .CodeMirror-scroll {
+            height: 100%;
+        }
+
+        html.light .CodeMirror {
+            background: #fafafa !important;
+            color: #18181b !important;
+        }
+
+        /* Code toolbar */
+        #code-toolbar {
+            height: 40px;
+            background: var(--bg2);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 0 14px;
+            flex-shrink: 0;
+        }
+
+        .lang-select {
+            background: var(--bg3);
+            border: 1px solid var(--border);
+            color: var(--text);
+            border-radius: 8px;
+            padding: 4px 10px;
+            font-size: 11px;
+            font-family: 'JetBrains Mono', monospace;
+            outline: none;
+            cursor: pointer;
+        }
+
+        .lang-select:focus {
+            border-color: rgba(99, 102, 241, 0.4);
+        }
+
+        /* PR badge */
+        .pr-badge {
+            background: rgba(245, 158, 11, 0.1);
+            border: 1px solid rgba(245, 158, 11, 0.25);
+            color: #fbbf24;
+            border-radius: 6px;
+            padding: 2px 8px;
+            font-size: 10px;
+        }
+
+        /* Pull requests panel */
+        #pr-panel {
+            width: 0;
+            overflow: hidden;
+            background: var(--bg2);
+            border-left: 1px solid var(--border);
+            transition: width 0.3s ease;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #pr-panel.open {
+            width: 280px;
+            min-width: 220px;
+        }
+
+        .pr-item {
+            padding: 12px 14px;
+            border-bottom: 1px solid var(--border);
+            cursor: pointer;
+            transition: background 0.15s ease;
+        }
+
+        .pr-item:hover {
+            background: var(--bg3);
+        }
+
+        .pr-item-title {
+            font-size: 12px;
+            color: var(--text);
+            margin-bottom: 4px;
+        }
+
+        .pr-item-meta {
+            font-size: 10px;
+            color: var(--muted2);
+        }
+
+        .pr-status {
+            border-radius: 999px;
+            padding: 2px 8px;
+            font-size: 10px;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .pr-status.pending {
+            background: rgba(245, 158, 11, 0.1);
+            color: #fbbf24;
+            border: 1px solid rgba(245, 158, 11, 0.2);
+        }
+
+        .pr-status.approved {
+            background: rgba(16, 185, 129, 0.1);
+            color: #34d399;
+            border: 1px solid rgba(16, 185, 129, 0.2);
+        }
+
+        .pr-status.rejected {
+            background: rgba(239, 68, 68, 0.1);
+            color: #f87171;
+            border: 1px solid rgba(239, 68, 68, 0.2);
+        }
+
+        /* ─────────────────── AI PANEL ─────────────────── */
+        #ai-panel {
+            display: none;
+        }
+
+        #ai-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        #ai-messages::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        #ai-messages::-webkit-scrollbar-thumb {
+            background: var(--border2);
+            border-radius: 4px;
+        }
+
+        .ai-msg {
+            display: flex;
+            gap: 10px;
+        }
+
+        .ai-msg.user {
+            flex-direction: row-reverse;
+        }
+
+        .ai-bubble {
+            max-width: 85%;
+            padding: 10px 14px;
+            border-radius: 14px;
+            font-size: 12px;
+            line-height: 1.7;
+        }
+
+        .ai-msg.user .ai-bubble {
+            background: var(--indigo);
+            color: white;
+            border-radius: 14px 14px 4px 14px;
+        }
+
+        .ai-msg.ai .ai-bubble {
+            background: var(--bg3);
+            border: 1px solid var(--border);
+            color: var(--text);
+            border-radius: 14px 14px 14px 4px;
+        }
+
+        .ai-bubble pre {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 8px;
+            padding: 10px;
+            overflow-x: auto;
+            margin: 8px 0;
+        }
+
+        .ai-bubble code {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+        }
+
+        .ai-bubble p {
+            margin-bottom: 6px;
+        }
+
+        .ai-bubble p:last-child {
+            margin-bottom: 0;
+        }
+
+        .ai-avatar {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            margin-top: 2px;
+        }
+
+        .ai-avatar.ai-bot {
+            background: rgba(167, 139, 250, 0.15);
+            color: #a78bfa;
+            border: 1px solid rgba(167, 139, 250, 0.2);
+        }
+
+        .ai-avatar.user {
+            background: rgba(99, 102, 241, 0.15);
+            color: var(--indigo2);
+            border: 1px solid rgba(99, 102, 241, 0.2);
+        }
+
+        /* AI typing indicator */
+        .ai-typing {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            padding: 6px 0;
+        }
+
+        .ai-typing span {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--muted);
+            animation: bounce 1.2s infinite;
+        }
+
+        .ai-typing span:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+
+        .ai-typing span:nth-child(3) {
+            animation-delay: 0.4s;
+        }
+
+        @keyframes bounce {
+
+            0%,
+            60%,
+            100% {
+                transform: translateY(0)
+            }
+
+            30% {
+                transform: translateY(-6px)
+            }
+        }
+
+        /* AI input */
+        #ai-input-area {
+            border-top: 1px solid var(--border);
+            padding: 12px;
+            flex-shrink: 0;
+        }
+
+        #ai-input-box {
+            background: var(--bg3);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            transition: border-color 0.3s ease;
+        }
+
+        #ai-input-box:focus-within {
+            border-color: rgba(167, 139, 250, 0.4);
+            box-shadow: 0 0 0 3px rgba(167, 139, 250, 0.08);
+        }
+
+        #ai-input {
+            width: 100%;
+            background: transparent;
+            border: none;
+            outline: none;
+            color: var(--text);
+            font-size: 12px;
+            padding: 10px 14px;
+            font-family: 'JetBrains Mono', monospace;
+            resize: none;
+            line-height: 1.5;
+            max-height: 100px;
+            overflow-y: auto;
+        }
+
+        #ai-input::placeholder {
+            color: var(--muted2);
+        }
+
+        #ai-send-btn {
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            background: rgba(167, 139, 250, 0.15);
+            border: 1px solid rgba(167, 139, 250, 0.25);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #a78bfa;
+            font-size: 12px;
+            transition: all 0.2s ease;
+            flex-shrink: 0;
+        }
+
+        #ai-send-btn:hover {
+            background: rgba(167, 139, 250, 0.25);
+        }
+
+        #ai-send-btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        /* ─────────────────── SIDEBAR ─────────────────── */
+        .sidebar-section {
+            padding: 12px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .sidebar-label {
+            font-size: 10px;
+            color: var(--muted2);
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            font-weight: 600;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .member-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 8px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background 0.15s ease;
+        }
+
+        .member-item:hover {
+            background: var(--bg3);
+        }
+
+        .member-name {
+            font-size: 12px;
+            color: var(--text);
+            flex: 1;
+            min-width: 0;
+        }
+
+        .member-name span {
+            display: block;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .member-role {
+            font-size: 10px;
+            color: var(--muted2);
+        }
+
+        .online-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: #22c55e;
+            border: 1px solid var(--bg2);
+            flex-shrink: 0;
+        }
+
+        .offline-dot {
+            background: var(--muted2);
+        }
+
+        /* Member context menu */
+        .ctx-menu {
+            position: fixed;
+            background: var(--bg2);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 4px;
+            z-index: 500;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+            min-width: 160px;
+            display: none;
+        }
+
+        .ctx-menu.show {
+            display: block;
+        }
+
+        .ctx-item {
+            padding: 8px 12px;
+            border-radius: 7px;
+            font-size: 12px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: background 0.15s ease;
+            color: var(--text);
+        }
+
+        .ctx-item:hover {
+            background: var(--bg3);
+        }
+
+        .ctx-item.danger {
+            color: #f87171;
+        }
+
+        .ctx-item.danger:hover {
+            background: rgba(239, 68, 68, 0.1);
+        }
+
+        .ctx-divider {
+            height: 1px;
+            background: var(--border);
+            margin: 4px 0;
+        }
+
+        /* ── Sidebar room info ── */
+        #sidebar-room-name {
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--text);
+        }
+
+        #sidebar-invite-code {
+            font-size: 10px;
+            color: var(--muted);
+            margin-top: 2px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        /* ── Coming soon badge ── */
+        .coming-soon {
+            font-size: 9px;
+            background: rgba(245, 158, 11, 0.1);
+            border: 1px solid rgba(245, 158, 11, 0.2);
+            color: #fbbf24;
+            border-radius: 999px;
+            padding: 1px 6px;
+            margin-left: 4px;
+        }
+
+        /* ── Modals ── */
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 400;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(8px);
+            display: none;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-overlay.open {
+            display: flex;
+        }
+
+        .modal-box {
+            background: var(--bg2);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            padding: 28px;
+            width: 100%;
+            max-width: 400px;
+            margin: 16px;
+            position: relative;
+        }
+
+        .modal-title {
+            font-size: 15px;
+            font-weight: 700;
+            color: var(--text);
+            margin-bottom: 8px;
+        }
+
+        .modal-desc {
+            font-size: 12px;
+            color: var(--muted);
+            margin-bottom: 20px;
+            line-height: 1.6;
+        }
+
+        .input-field {
+            background: var(--bg3);
+            border: 1px solid var(--border);
+            color: var(--text);
+            border-radius: 10px;
+            padding: 10px 14px;
+            font-size: 12px;
+            outline: none;
+            width: 100%;
+            font-family: 'JetBrains Mono', monospace;
+            transition: all 0.3s ease;
+        }
+
+        .input-field:focus {
+            border-color: rgba(99, 102, 241, 0.4);
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.08);
+        }
+
+        .btn-primary {
+            background: var(--indigo);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            padding: 10px 18px;
+            font-size: 12px;
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+        }
+
+        .btn-primary:hover {
+            background: #4f46e5;
+        }
+
+        .btn-danger {
+            background: rgba(239, 68, 68, 0.1);
+            color: #f87171;
+            border: 1px solid rgba(239, 68, 68, 0.2);
+            border-radius: 10px;
+            padding: 10px 18px;
+            font-size: 12px;
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+        }
+
+        .btn-danger:hover {
+            background: rgba(239, 68, 68, 0.2);
+        }
+
+        .btn-ghost-sm {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--muted);
+            border-radius: 8px;
+            padding: 8px 14px;
+            font-size: 12px;
+            cursor: pointer;
+            font-family: 'JetBrains Mono', monospace;
+            transition: all 0.2s ease;
+        }
+
+        .btn-ghost-sm:hover {
+            border-color: var(--border2);
+            color: var(--text);
+        }
+
+        /* ── Toast ── */
+        #toast {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%) translateY(80px);
+            background: var(--bg2);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 10px 18px;
+            font-size: 12px;
+            color: var(--text);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            z-index: 600;
+            transition: transform 0.4s ease;
+            white-space: nowrap;
+        }
+
+        #toast.show {
+            transform: translateX(-50%) translateY(0);
+        }
+
+        #toast.error {
+            border-color: rgba(239, 68, 68, 0.4);
+        }
+
+        #toast.success {
+            border-color: rgba(16, 185, 129, 0.4);
+        }
+
+        /* ── Theme toggle ── */
+        #theme-toggle {
+            width: 32px;
+            height: 18px;
+            background: rgba(99, 102, 241, 0.2);
+            border: 1px solid rgba(99, 102, 241, 0.3);
+            border-radius: 999px;
+            cursor: pointer;
+            position: relative;
+        }
+
+        #theme-toggle::after {
+            content: '';
+            position: absolute;
+            width: 11px;
+            height: 11px;
+            border-radius: 50%;
+            background: var(--indigo);
+            top: 2.5px;
+            left: 2.5px;
+            transition: transform 0.3s ease;
+        }
+
+        html.light #theme-toggle::after {
+            transform: translateX(14px);
+        }
+
+        /* ── Scrollbar ── */
+        ::-webkit-scrollbar {
+            width: 4px;
+            height: 4px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--border2);
+            border-radius: 4px;
+        }
+
+        /* ── Noise ── */
+        .noise {
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            z-index: 9997;
+            opacity: 0.015;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+        }
+
+        /* Markdown in chat */
+        .msg-text code {
+            background: rgba(99, 102, 241, 0.1);
+            border-radius: 4px;
+            padding: 1px 5px;
+            font-size: 11px;
+            color: var(--indigo2);
+        }
+
+        /* Edit input */
+        .edit-input {
+            background: var(--bg3);
+            border: 1px solid rgba(99, 102, 241, 0.4);
+            color: var(--text);
+            border-radius: 8px;
+            padding: 6px 10px;
+            font-size: 12px;
+            font-family: 'JetBrains Mono', monospace;
+            width: 100%;
+            outline: none;
+            margin-top: 4px;
+        }
+
+        .edit-actions {
+            display: flex;
+            gap: 4px;
+            margin-top: 4px;
+        }
+
+        .edit-save,
+        .edit-cancel {
+            font-size: 10px;
+            padding: 3px 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-family: 'JetBrains Mono', monospace;
+            border: none;
+        }
+
+        .edit-save {
+            background: var(--indigo);
+            color: white;
+        }
+
+        .edit-cancel {
+            background: var(--bg4);
+            color: var(--muted);
+        }
+
+        /* Streaming cursor blink */
+        .stream-cursor {
+            display: inline-block;
+            animation: blink 0.8s step-end infinite;
+            color: #a78bfa;
+            font-size: 14px;
+            margin-left: 2px;
+        }
+
+        #code-panel {
+            flex-direction: row !important;
+        }
+
+        @keyframes blink {
+
+            0%,
+            100% {
+                opacity: 1
+            }
+
+            50% {
+                opacity: 0
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- PAGE LOADER -->
+    <div id="page-loader">
+        <div class="flex items-center gap-2 mb-2">
+            <div class="w-6 h-6 rounded-md bg-indigo-500 flex items-center justify-center">
+                <i class="fa-solid fa-code text-white text-xs"></i>
+            </div>
+            <span class="font-bold text-sm" style="color:var(--text);">StackRoom</span>
+        </div>
+        <div class="loader-ring"></div>
+        <p class="text-xs mt-1" id="loader-msg" style="color:var(--muted);">Loading room...</p>
+    </div>
+
+    <div class="noise"></div>
+
+    <!-- CONTEXT MENU (member right-click) -->
+    <div class="ctx-menu" id="ctx-menu">
+        <div class="ctx-item" id="ctx-mention" onclick="ctxMention()">
+            <i class="fa-solid fa-at text-indigo-400"></i> Mention
+        </div>
+        <div class="ctx-item" id="ctx-role" onclick="ctxChangeRole()" style="display:none;">
+            <i class="fa-solid fa-shield text-yellow-400"></i> Change Role
+        </div>
+        <div class="ctx-divider" id="ctx-divider" style="display:none;"></div>
+        <div class="ctx-item danger" id="ctx-kick" onclick="ctxKick()" style="display:none;">
+            <i class="fa-solid fa-user-xmark"></i> Remove from Room
+        </div>
+    </div>
+
+    <!-- KICK CONFIRM MODAL -->
+    <div class="modal-overlay" id="kick-modal">
+        <div class="modal-box">
+            <div class="modal-title"><i class="fa-solid fa-user-xmark text-red-400 mr-2"></i>Remove Member</div>
+            <div class="modal-desc">
+                Remove <strong id="kick-name" style="color:var(--text);"></strong> from the room?
+                They can rejoin with an invite code.
+            </div>
+            <div class="flex gap-3">
+                <button class="btn-ghost-sm flex-1" onclick="closeModal('kick-modal')">Cancel</button>
+                <button class="btn-danger flex-1" onclick="confirmKick()">
+                    <i class="fa-solid fa-user-xmark"></i> Remove
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ROLE MODAL -->
+    <div class="modal-overlay" id="role-modal">
+        <div class="modal-box">
+            <div class="modal-title"><i class="fa-solid fa-shield text-yellow-400 mr-2"></i>Change Role</div>
+            <div class="modal-desc">Set role for <strong id="role-name" style="color:var(--text);"></strong></div>
+            <div class="flex flex-col gap-2 mb-4">
+                <button class="btn-ghost-sm" onclick="setMemberRole('admin')">
+                    <i class="fa-solid fa-crown text-indigo-400 mr-2"></i>Admin
+                </button>
+                <button class="btn-ghost-sm" onclick="setMemberRole('member')">
+                    <i class="fa-solid fa-user text-green-400 mr-2"></i>Member
+                </button>
+                <button class="btn-ghost-sm" onclick="setMemberRole('viewer')">
+                    <i class="fa-solid fa-eye text-yellow-400 mr-2"></i>Viewer (read-only)
+                </button>
+            </div>
+            <button class="btn-ghost-sm w-full" onclick="closeModal('role-modal')">Cancel</button>
+        </div>
+    </div>
+
+    <!-- INVITE MODAL -->
+    <div class="modal-overlay" id="invite-modal">
+        <div class="modal-box">
+            <div class="modal-title"><i class="fa-solid fa-link text-indigo-400 mr-2"></i>Invite People</div>
+            <div class="modal-desc">Share this code or link to invite teammates.</div>
+            <div class="mb-3">
+                <div class="text-xs mb-1" style="color:var(--muted);">Invite Code</div>
+                <div
+                    style="background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:10px 14px;display:flex;align-items:center;justify-content:space-between;">
+                    <span class="text-xl font-bold tracking-widest text-indigo-400" id="inv-code"></span>
+                    <button class="icon-btn" onclick="copyInvCode()"><i class="fa-regular fa-copy"></i></button>
+                </div>
+            </div>
+            <div class="mb-4">
+                <div class="text-xs mb-1" style="color:var(--muted);">Invite Link</div>
+                <div
+                    style="background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:10px 14px;display:flex;align-items:center;justify-content:space-between;gap:8px;">
+                    <span class="text-xs truncate" style="color:var(--muted);" id="inv-link"></span>
+                    <button class="icon-btn" onclick="copyInvLink()"><i class="fa-regular fa-copy"></i></button>
+                </div>
+            </div>
+            <button class="btn-primary" onclick="closeModal('invite-modal')">Done</button>
+        </div>
+    </div>
+
+    <!-- MAIN APP -->
+    <div id="app" style="display:none;">
+
+        <!-- ══ SIDEBAR ══ -->
+        <div id="sidebar">
+
+            <!-- Room info -->
+            <div class="sidebar-section">
+                <div class="flex items-start justify-between gap-2">
+                    <div class="min-w-0">
+                        <div id="sidebar-room-name" class="truncate">Loading...</div>
+                        <div id="sidebar-invite-code">
+                            <i class="fa-solid fa-key"></i>
+                            <span id="sidebar-code">------</span>
+                            <button onclick="window.copyCode()" class="hover:text-indigo-400 transition-colors">
+                                <i class="fa-regular fa-copy text-xs"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <button class="icon-btn" onclick="window.openInviteModal()" title="Invite">
+                        <i class="fa-solid fa-user-plus"></i>
+                    </button>
+                </div>
+                <!-- Admin actions -->
+                <div id="admin-actions" class="flex gap-2 mt-3" style="display:none!important;">
+                    <button class="icon-btn active" title="Room Settings" onclick="">
+                        <i class="fa-solid fa-gear"></i>
+                    </button>
+                    <button class="icon-btn" title="Regenerate Invite" onclick="window.regenInvite()">
+                        <i class="fa-solid fa-rotate"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Voice / Video — coming soon -->
+            <div class="sidebar-section">
+                <div class="sidebar-label">
+                    Voice & Video
+                    <span class="coming-soon">Soon</span>
+                </div>
+                <div class="flex gap-2">
+                    <button class="icon-btn flex-1 opacity-40" title="Voice — Coming Soon" disabled
+                        style="width:auto;padding:0 10px;">
+                        <i class="fa-solid fa-microphone mr-1"></i>
+                        <span style="font-size:10px;">Voice</span>
+                    </button>
+                    <button class="icon-btn flex-1 opacity-40" title="Video — Coming Soon" disabled
+                        style="width:auto;padding:0 10px;">
+                        <i class="fa-solid fa-video mr-1"></i>
+                        <span style="font-size:10px;">Video</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Members -->
+            <div class="sidebar-section" style="flex:1;overflow-y:auto;border-bottom:none;">
+                <div class="sidebar-label">
+                    Members
+                    <span id="member-count" style="color:var(--muted);">0</span>
+                </div>
+                <div id="members-list"></div>
+            </div>
+
+            <!-- Nav links at bottom -->
+            <div class="sidebar-section"
+                style="border-top:1px solid var(--border);border-bottom:none;padding:10px 12px;">
+                <div class="flex items-center justify-between">
+                    <a href="/lobby/" class="icon-btn" title="Back to Lobby">
+                        <i class="fa-solid fa-arrow-left"></i>
+                    </a>
+                    <div class="flex gap-1">
+                        <div id="theme-toggle"></div>
+                    </div>
+                    <button onclick="window.doSignOut()" class="icon-btn danger" title="Sign Out">
+                        <i class="fa-solid fa-right-from-bracket"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ══ MAIN ══ -->
+        <div id="main">
+
+            <!-- TOP BAR -->
+            <div id="topbar">
+                <!-- Sidebar toggle -->
+                <button class="icon-btn" onclick="window.toggleSidebar()" id="sidebar-toggle" title="Toggle Sidebar">
+                    <i class="fa-solid fa-sidebar"></i>
+                </button>
+
+                <!-- Room name in topbar (when sidebar collapsed) -->
+                <span id="topbar-room" class="text-sm font-semibold" style="color:var(--text);"></span>
+
+                <div style="flex:1;"></div>
+
+                <!-- Panel toggle buttons -->
+                <div class="flex items-center gap-2">
+                    <button class="icon-btn active" id="toggle-chat" onclick="window.togglePanel('chat')" title="Chat">
+                        <i class="fa-solid fa-message"></i>
+                    </button>
+                    <button class="icon-btn" id="toggle-code" onclick="window.togglePanel('code')" title="Code Editor">
+                        <i class="fa-solid fa-code"></i>
+                    </button>
+                    <button class="icon-btn" id="toggle-ai" onclick="window.togglePanel('ai')" title="AI Assistant">
+                        <i class="fa-solid fa-wand-magic-sparkles"></i>
+                    </button>
+
+                    <div style="width:1px;height:20px;background:var(--border);margin:0 4px;"></div>
+
+                    <!-- Invite -->
+                    <button class="icon-btn" onclick="window.openInviteModal()" title="Invite">
+                        <i class="fa-solid fa-user-plus"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- TABS BAR -->
+            <div id="tabs-bar">
+                <div class="tab-item active" id="tab-chat" onclick="window.focusPanel('chat')">
+                    <i class="fa-solid fa-message" style="font-size:10px;"></i>
+                    <span>Chat</span>
+                </div>
+                <div class="tab-item" id="tab-code" onclick="window.focusPanel('code')" style="display:none;">
+                    <i class="fa-solid fa-code" style="font-size:10px;"></i>
+                    <span id="tab-code-name">editor.js</span>
+                    <span class="tab-close" onclick="event.stopPropagation();window.togglePanel('code')">
+                        <i class="fa-solid fa-xmark"></i>
+                    </span>
+                </div>
+                <div class="tab-item" id="tab-ai" onclick="window.focusPanel('ai')" style="display:none;">
+                    <i class="fa-solid fa-wand-magic-sparkles" style="font-size:10px;color:#a78bfa;"></i>
+                    <span>AI Assistant</span>
+                    <span class="tab-close" onclick="event.stopPropagation();window.togglePanel('ai')">
+                        <i class="fa-solid fa-xmark"></i>
+                    </span>
+                </div>
+
+                <div style="flex:1;"></div>
+
+                <!-- PR button (shows in code tab) -->
+                <button id="pr-btn" onclick="window.togglePR()" title="Pull Requests" style="display:none;"
+                    class="icon-btn">
+                    <i class="fa-solid fa-code-pull-request"></i>
+                    <span class="pr-badge ml-1" id="pr-count">0</span>
+                </button>
+            </div>
+
+            <!-- PANELS -->
+            <div id="panels">
+
+                <!-- ──── CHAT PANEL ──── -->
+                <div class="panel-wrap" id="chat-panel" style="flex:1;">
+                    <div id="messages"></div>
+
+                    <div id="chat-input-area">
+                        <!-- Reply bar -->
+                        <div id="reply-bar">
+                            <div>
+                                <i class="fa-solid fa-reply text-indigo-400 mr-2"></i>
+                                Replying to <strong id="reply-name"></strong>:
+                                <span id="reply-preview" style="color:var(--muted2);"></span>
+                            </div>
+                            <button onclick="window.cancelReply()" class="icon-btn">
+                                <i class="fa-solid fa-xmark text-xs"></i>
+                            </button>
+                        </div>
+
+                        <!-- Input box -->
+                        <div id="chat-input-box" style="position:relative;">
+                            <!-- Mention dropdown -->
+                            <div id="mention-dropdown"></div>
+
+                            <textarea id="chat-input" rows="1" placeholder="Message room... (@ai, @name)"
+                                oninput="window.onChatInput(event)" onkeydown="window.onChatKeydown(event)"></textarea>
+
+                            <div class="input-toolbar">
+                                <div class="input-toolbar-left">
+                                    <button class="icon-btn" onclick="window.insertCode()" title="Insert code snippet">
+                                        <i class="fa-solid fa-code"></i>
+                                    </button>
+                                    <button class="icon-btn" onclick="window.triggerMention()" title="Mention someone">
+                                        <i class="fa-solid fa-at"></i>
+                                    </button>
+                                </div>
+                                <button id="send-btn" onclick="window.sendMessage()">
+                                    <i class="fa-solid fa-paper-plane"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Resize handle chat|code -->
+                <div class="resize-handle" id="handle-chat-code" style="display:none;"
+                    onmousedown="window.startResize(event,'handle-chat-code')"></div>
+
+                <!-- ──── CODE PANEL ──── -->
+                <div class="panel-wrap" id="code-panel" style="flex:1;">
+                    <div id="file-explorer" style="width:200px;min-width:160px;flex-shrink:0;
+  background:var(--bg2);border-right:1px solid var(--border);
+  display:flex;flex-direction:column;overflow:hidden;">
+                        <div style="padding:8px 12px;display:flex;align-items:center;
+    justify-content:space-between;border-bottom:1px solid var(--border);">
+                            <span
+                                style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;">Explorer</span>
+                            <button class="icon-btn" onclick="window.newFile()" title="New File">
+                                <i class="fa-solid fa-plus"></i>
+                            </button>
+                        </div>
+                        <div id="file-list" style="flex:1;overflow-y:auto;padding:4px;"></div>
+                    </div>
+                    <div id="editor-inner"
+                        style="flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0;">
+                        <!-- Code toolbar -->
+                        <div id="code-toolbar">
+                            <i class="fa-solid fa-code text-xs" style="color:var(--muted);"></i>
+                            <input id="file-name" class="input-field" style="width:140px;padding:4px 8px;"
+                                value="untitled.js" onchange="window.onFileNameChange()" />
+                            <select class="lang-select" id="lang-select" onchange="window.onLangChange()">
+                                <option value="javascript">JavaScript</option>
+                                <option value="python">Python</option>
+                                <option value="text/x-csrc">C</option>
+                                <option value="text/x-c++src">C++</option>
+                                <option value="text/x-java">Java</option>
+                                <option value="xml">HTML</option>
+                                <option value="css">CSS</option>
+                            </select>
+
+                            <div style="flex:1;"></div>
+
+                            <!-- Coming soon -->
+                            <div class="flex items-center gap-1" style="color:var(--muted);font-size:11px;">
+                                <i class="fa-solid fa-users"></i>
+                                <span>Live sync</span>
+                                <span class="coming-soon">Soon</span>
+                            </div>
+
+                            <button class="icon-btn" onclick="window.copyEditorCode()" title="Copy code">
+                                <i class="fa-regular fa-copy"></i>
+                            </button>
+                            <button class="icon-btn" onclick="window.saveEditorCode()" title="Save to room"
+                                id="save-btn">
+                                <i class="fa-solid fa-floppy-disk"></i>
+                            </button>
+                            <button class="icon-btn" onclick="window.submitPR()" title="Submit as Pull Request">
+                                <i class="fa-solid fa-code-pull-request"></i>
+                            </button>
+                        </div>
+
+                        <!-- CodeMirror mounts here -->
+                        <div id="editor-container" style="flex:1;overflow:hidden;"></div>
+                    </div>
+
+                    <!-- PR panel -->
+                    <div id="pr-panel">
+                        <div class="panel-header">
+                            <span class="panel-title">Pull Requests</span>
+                            <button class="icon-btn" onclick="window.togglePR()">
+                                <i class="fa-solid fa-xmark text-xs"></i>
+                            </button>
+                        </div>
+                        <div id="pr-list" style="overflow-y:auto;flex:1;"></div>
+                    </div>
+                </div>
+
+                <!-- Resize handle code|ai -->
+                <div class="resize-handle" id="handle-code-ai" style="display:none;"
+                    onmousedown="window.startResize(event,'handle-code-ai')"></div>
+
+                <!-- ──── AI PANEL ──── -->
+                <div class="panel-wrap" id="ai-panel" style="flex:0 0 360px;max-width:480px;min-width:280px;">
+
+                    <div class="panel-header">
+                        <div class="flex items-center gap-2">
+                            <i class="fa-solid fa-wand-magic-sparkles" style="color:#a78bfa;font-size:11px;"></i>
+                            <span class="panel-title">AI Assistant</span>
+                        </div>
+                        <button class="icon-btn" onclick="window.clearAIChat()" title="Clear chat">
+                            <i class="fa-solid fa-broom text-xs"></i>
+                        </button>
+                    </div>
+
+                    <div id="ai-messages">
+                        <!-- Welcome message -->
+                        <div class="ai-msg ai">
+                            <div class="ai-avatar ai-bot"><i class="fa-solid fa-wand-magic-sparkles"></i></div>
+                            <div class="ai-bubble">
+                                <p>Hey! I'm your personal coding AI. Ask me anything — debugging, code review,
+                                    explanations, or generation.</p>
+                                <p style="margin-top:8px;font-size:11px;color:var(--muted);">
+                                    <i class="fa-solid fa-lightbulb mr-1"></i>
+                                    Tip: You can also use <strong>@ai</strong> in the room chat to involve me in group
+                                    discussions.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="ai-input-area">
+                        <div id="ai-input-box">
+                            <div style="display:flex;align-items:flex-end;gap:6px;padding:4px 8px 6px;">
+                                <textarea id="ai-input" rows="1" placeholder="Ask AI anything about your code..."
+                                    onkeydown="window.onAIKeydown(event)"
+                                    oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,100)+'px'"></textarea>
+                                <button id="ai-send-btn" onclick="window.sendAI()">
+                                    <i class="fa-solid fa-paper-plane"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <p class="text-center mt-2" style="font-size:10px;color:var(--muted2);">
+                            Powered by Gemini 1.5 Flash
+                        </p>
+                    </div>
+                </div>
+
+            </div><!-- /panels -->
+        </div><!-- /main -->
+    </div><!-- /app -->
+
+    <!-- TOAST -->
+    <div id="toast">
+        <i class="fa-solid fa-circle-info text-indigo-400" id="toast-icon"></i>
+        <span id="toast-msg"></span>
+    </div>
+
+    <!-- ═══════════════════════════════════════
+       FIREBASE + ALL LOGIC
+  ═══════════════════════════════════════ -->
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import {
+            getAuth, onAuthStateChanged, signOut as fbSignOut
+        } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+        import {
+            getFirestore,
+            doc, collection,
+            onSnapshot, addDoc, updateDoc, deleteDoc,
+            query, orderBy, limit, serverTimestamp, getDoc
+        } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+        // ── Init ──
+        const firebaseConfig = await fetch('/api/config').then(r => r.json());
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        // ── State ──
+        let currentUser = null;
+        let currentRoom = null;
+        let roomId = null;
+        let myRole = 'member';
+        let members = {};
+        let replyTo = null;
+        let mentionIndex = 0;
+        let mentionList = [];
+        let aiHistory = [];
+        let editorInstance = null;
+        let unsubMessages = null;
+        let unsubTyping = null;
+        let ctxTarget = null;
+        let kickTarget = null;
+        let roleTarget = null;
+        let prList = [];
+        let files = [];
+        let activeFileId = null;
+        let typingTimer = null;
+
+        // ─────────────────────────────────────
+        //  HELPERS
+        // ─────────────────────────────────────
+        function esc(str) {
+            return String(str || '')
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+
+        function getInitials(name) {
+            return (name || '?').split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+        }
+
+        function formatTime(ts) {
+            if (!ts) return '';
+            const d = ts.toDate ? ts.toDate() : new Date(ts);
+            return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        }
+
+        function getToken() { return currentUser?.getIdToken(); }
+
+        function hideLoader() {
+            const l = document.getElementById('page-loader');
+            l.classList.add('hidden');
+            setTimeout(() => l.style.display = 'none', 400);
+        }
+
+        function setLoaderMsg(m) {
+            document.getElementById('loader-msg').textContent = m;
+        }
+
+        // ─────────────────────────────────────
+        //  TOAST
+        // ─────────────────────────────────────
+        function showToast(msg, type = 'info') {
+            const t = document.getElementById('toast');
+            const tm = document.getElementById('toast-msg');
+            const ti = document.getElementById('toast-icon');
+            tm.textContent = msg;
+            ti.className =
+                type === 'error' ? 'fa-solid fa-circle-xmark text-red-400' :
+                    type === 'success' ? 'fa-solid fa-circle-check text-green-400' :
+                        'fa-solid fa-circle-info text-indigo-400';
+            t.className = `show ${type}`;
+            setTimeout(() => { t.className = ''; }, 3500);
+        }
+        window.showToast = showToast;
+
+        // ─────────────────────────────────────
+        //  PARSE MESSAGE TEXT
+        //  auto-detects code blocks, inline code,
+        //  @mentions, bold, italic
+        // ─────────────────────────────────────
+        function parseMessageText(text) {
+  if (!text) return '';
+
+  // ── Step 1: pull out code blocks BEFORE escaping ──
+  const codeBlocks = [];
+  text = text.replace(/```(\w+)?\n?([\s\S]*?)```/g, (_, lang, code) => {
+    const safeLang = lang || 'plaintext';
+    const idx      = codeBlocks.length;
+    codeBlocks.push(`
+      <div class="code-snippet">
+        <div class="code-snippet-header">
+          <span><i class="fa-solid fa-code mr-1"></i>${safeLang}</span>
+          <button onclick="navigator.clipboard.writeText(this.closest('.code-snippet').querySelector('pre code').textContent);window.showToast('Copied!','success')"
+            class="icon-btn" style="height:20px;padding:0 8px;font-size:10px;">
+            <i class="fa-regular fa-copy mr-1"></i>Copy
+          </button>
+        </div>
+        <pre><code class="language-${safeLang}">${
+          code.trim()
+            .replace(/&/g,'&amp;')
+            .replace(/</g,'&lt;')
+            .replace(/>/g,'&gt;')
+        }</code></pre>
+      </div>`);
+    return `%%CODEBLOCK_${idx}%%`; // placeholder
+  });
+
+  // ── Step 2: escape the REST of the text (user's plain text) ──
+  text = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+
+  // ── Step 3: inline code ──
+  text = text.replace(/`([^`]+)`/g, '<code>$1</code>');
+
+  // ── Step 4: @mentions ──
+  text = text.replace(/@ai\b/g,    '<span class="mention-ai">@ai</span>');
+  text = text.replace(/@([\w]+)/g, '<span class="mention-user">@$1</span>');
+
+  // ── Step 5: bold / italic ──
+  text = text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  text = text.replace(/\*(.+?)\*/g,     '<em>$1</em>');
+
+  // ── Step 6: line breaks ──
+  text = text.replace(/\n/g, '<br>');
+
+  // ── Step 7: put code blocks back ──
+  text = text.replace(/%%CODEBLOCK_(\d+)%%/g, (_, i) => codeBlocks[i]);
+
+  return text;
+}
+
+
+        // ─────────────────────────────────────
+        //  PANEL MANAGEMENT
+        // ─────────────────────────────────────
+        const panelState = { chat: true, code: false, ai: false };
+
+        window.togglePanel = (name) => {
+            panelState[name] = !panelState[name];
+            applyPanels();
+        };
+
+        window.focusPanel = (name) => {
+            ['chat', 'code', 'ai'].forEach(p => {
+                document.getElementById(`tab-${p}`)?.classList.toggle('active', p === name);
+            });
+        };
+
+        function applyPanels() {
+            ['chat', 'code', 'ai'].forEach(p => {
+                const wrap = document.getElementById(`${p}-panel`);
+                const tab = document.getElementById(`tab-${p}`);
+                const btn = document.getElementById(`toggle-${p}`);
+                if (!wrap) return;
+                if (panelState[p]) {
+                    wrap.style.display = 'flex';
+                    wrap.style.flexDirection = 'column';
+                    if (tab) tab.style.display = 'flex';
+                    if (btn) btn.classList.add('active');
+                } else {
+                    wrap.style.display = 'none';
+                    if (tab) tab.style.display = 'none';
+                    if (btn) btn.classList.remove('active');
+                }
+            });
+
+            // Resize handles
+            const hcc = document.getElementById('handle-chat-code');
+            const hca = document.getElementById('handle-code-ai');
+            if (hcc) hcc.style.display = panelState.chat && panelState.code ? 'block' : 'none';
+            if (hca) hca.style.display = panelState.code && panelState.ai ? 'block' : 'none';
+
+            // PR button
+            const prBtn = document.getElementById('pr-btn');
+            if (prBtn) prBtn.style.display = panelState.code ? 'flex' : 'none';
+
+            // Refresh CodeMirror
+            if (panelState.code && editorInstance) {
+                setTimeout(() => editorInstance.refresh(), 50);
+            }
+
+            // Focus first active tab
+            const first = ['chat', 'code', 'ai'].find(p => panelState[p]);
+            if (first) window.focusPanel(first);
+        }
+
+        // ─────────────────────────────────────
+        //  SIDEBAR
+        // ─────────────────────────────────────
+        let sidebarOpen = true;
+        window.toggleSidebar = () => {
+            sidebarOpen = !sidebarOpen;
+            document.getElementById('sidebar').classList.toggle('collapsed', !sidebarOpen);
+        };
+
+        // ─────────────────────────────────────
+        //  RESIZE PANELS
+        // ─────────────────────────────────────
+        window.startResize = (e, handleId) => {
+            e.preventDefault();
+            const handle = document.getElementById(handleId);
+            handle.classList.add('dragging');
+            const isLeft = handleId === 'handle-chat-code';
+            const leftEl = document.getElementById(isLeft ? 'chat-panel' : 'code-panel');
+            const rightEl = document.getElementById(isLeft ? 'code-panel' : 'ai-panel');
+            const startX = e.clientX;
+            const leftW = leftEl.getBoundingClientRect().width;
+            const rightW = rightEl.getBoundingClientRect().width;
+
+            const onMove = (mv) => {
+                const dx = mv.clientX - startX;
+                leftEl.style.flex = 'none';
+                leftEl.style.width = Math.max(200, leftW + dx) + 'px';
+                rightEl.style.flex = 'none';
+                rightEl.style.width = Math.max(200, rightW - dx) + 'px';
+                if (editorInstance) editorInstance.refresh();
+            };
+            const onUp = () => {
+                handle.classList.remove('dragging');
+                document.removeEventListener('mousemove', onMove);
+                document.removeEventListener('mouseup', onUp);
+            };
+            document.addEventListener('mousemove', onMove);
+            document.addEventListener('mouseup', onUp);
+        };
+
+        // ─────────────────────────────────────
+        //  MEMBERS
+        // ─────────────────────────────────────
+        function renderMembers() {
+            const list = document.getElementById('members-list');
+            const keys = Object.keys(members);
+            document.getElementById('member-count').textContent = keys.length;
+
+            list.innerHTML = keys.map(uid => {
+                const m = members[uid];
+                const roleIcon =
+                    m.role === 'admin' ? '<i class="fa-solid fa-crown" style="font-size:8px;color:#818cf8;"></i>' :
+                        m.role === 'viewer' ? '<i class="fa-solid fa-eye"   style="font-size:8px;color:#fbbf24;"></i>' : '';
+
+                return `
+        <div class="member-item" data-uid="${uid}"
+             oncontextmenu="window.openCtxMenu(event,'${uid}')"
+             onclick="window.openCtxMenu(event,'${uid}')">
+          <div class="msg-avatar" style="width:26px;height:26px;font-size:9px;">
+            ${m.photoURL
+                        ? `<img src="${esc(m.photoURL)}" alt=""
+                      onerror="this.parentElement.textContent='${getInitials(m.displayName)}'">`
+                        : getInitials(m.displayName)}
+          </div>
+          <div class="member-name">
+            <span>${esc(m.displayName || 'Unknown')}</span>
+            <span class="member-role">${m.role} ${roleIcon}</span>
+          </div>
+          ${uid === currentUser?.uid
+                        ? '<span style="font-size:9px;color:var(--indigo2);">you</span>'
+                        : ''}
+        </div>`;
+            }).join('');
+        }
+
+        // ─────────────────────────────────────
+        //  CONTEXT MENU
+        // ─────────────────────────────────────
+        window.openCtxMenu = (e, uid) => {
+            e.preventDefault(); e.stopPropagation();
+            ctxTarget = uid;
+            const isAdmin = myRole === 'admin';
+            const isSelf = uid === currentUser?.uid;
+            const menu = document.getElementById('ctx-menu');
+
+            document.getElementById('ctx-role').style.display = isAdmin && !isSelf ? 'flex' : 'none';
+            document.getElementById('ctx-divider').style.display = isAdmin && !isSelf ? 'block' : 'none';
+            document.getElementById('ctx-kick').style.display = isAdmin && !isSelf ? 'flex' : 'none';
+
+            menu.style.left = Math.min(e.clientX, innerWidth - 180) + 'px';
+            menu.style.top = Math.min(e.clientY, innerHeight - 180) + 'px';
+            menu.classList.add('show');
+        };
+
+        document.addEventListener('click', () => {
+            document.getElementById('ctx-menu')?.classList.remove('show');
+        });
+
+        window.ctxMention = () => {
+            const m = members[ctxTarget];
+            if (!m) return;
+            const inp = document.getElementById('chat-input');
+            inp.value += `@${m.displayName} `;
+            inp.focus();
+        };
+
+        window.ctxKick = () => {
+            kickTarget = ctxTarget;
+            document.getElementById('kick-name').textContent = members[kickTarget]?.displayName || 'member';
+            openModal('kick-modal');
+        };
+
+        window.confirmKick = async () => {
+            if (!kickTarget) return;
+            try {
+                const token = await getToken();
+                const res = await fetch(`/api/rooms/${roomId}/members/${kickTarget}`, {
+                    method: 'DELETE',
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (!res.ok) throw new Error((await res.json()).error);
+                showToast('Member removed.', 'success');
+                closeModal('kick-modal');
+            } catch (err) {
+                showToast(err.message, 'error');
+            }
+        };
+
+        window.ctxChangeRole = () => {
+            roleTarget = ctxTarget;
+            document.getElementById('role-name').textContent = members[roleTarget]?.displayName || 'member';
+            openModal('role-modal');
+        };
+
+        window.setMemberRole = async (role) => {
+            if (!roleTarget) return;
+            try {
+                const token = await getToken();
+                const res = await fetch(`/api/rooms/${roomId}/members/${roleTarget}/role`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                    body: JSON.stringify({ role })
+                });
+                if (!res.ok) throw new Error((await res.json()).error);
+                showToast(`Role updated to ${role}.`, 'success');
+                closeModal('role-modal');
+            } catch (err) {
+                showToast(err.message, 'error');
+            }
+        };
+
+        // ─────────────────────────────────────
+        //  MODALS
+        // ─────────────────────────────────────
+        function openModal(id) {
+            document.getElementById(id).classList.add('open');
+        }
+        function closeModal(id) {
+            document.getElementById(id).classList.remove('open');
+        }
+        window.closeModal = closeModal;
+
+        window.openInviteModal = () => {
+            document.getElementById('inv-code').textContent = currentRoom?.inviteCode || '';
+            document.getElementById('inv-link').textContent =
+                `${location.origin}/lobby/?join=${currentRoom?.inviteCode}`;
+            openModal('invite-modal');
+        };
+        window.copyInvCode = () => {
+            navigator.clipboard.writeText(currentRoom?.inviteCode || '');
+            showToast('Code copied!', 'success');
+        };
+        window.copyInvLink = () => {
+            navigator.clipboard.writeText(`${location.origin}/lobby/?join=${currentRoom?.inviteCode}`);
+            showToast('Link copied!', 'success');
+        };
+        window.copyCode = () => {
+            navigator.clipboard.writeText(currentRoom?.inviteCode || '');
+            showToast('Invite code copied!', 'success');
+        };
+
+        window.regenInvite = async () => {
+            try {
+                const token = await getToken();
+                const res = await fetch(`/api/invite/${roomId}/regenerate`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error);
+                currentRoom.inviteCode = data.inviteCode;
+                document.getElementById('sidebar-code').textContent = data.inviteCode;
+                showToast('New code: ' + data.inviteCode, 'success');
+            } catch (err) {
+                showToast(err.message, 'error');
+            }
+        };
+
+        // ─────────────────────────────────────
+        //  BUILD MESSAGE HTML
+        // ─────────────────────────────────────
+        function buildMsgHTML(msg) {
+            const m = members[msg.uid] || {};
+            const isMe = msg.uid === currentUser?.uid;
+            const isAdmin = myRole === 'admin';
+            const canEdit = isMe && !msg.deleted;
+            const canDel = (isMe || isAdmin) && !msg.deleted;
+            const initials = getInitials(m.displayName || msg.displayName || '?');
+            const photo = m.photoURL || msg.photoURL || '';
+
+            // Text — use replyHtml if AI, else parse manually
+            let textContent = '';
+            if (msg.deleted) {
+                textContent = '<em style="color:var(--muted2);">Message deleted</em>';
+            } else if (msg.isAI && msg.textHtml) {
+                // Server already parsed markdown → HTML
+                textContent = msg.textHtml;
+            } else {
+                textContent = parseMessageText(msg.text || '');
+            }
+
+            // Reply quote
+            let replyHTML = '';
+            if (msg.replyTo) {
+                const rm = members[msg.replyTo.uid] || {};
+                replyHTML = `
+        <div class="reply-quote"
+             onclick="document.getElementById('msg-${msg.replyTo.id}')?.scrollIntoView({behavior:'smooth'})">
+          <strong>${esc(rm.displayName || msg.replyTo.name || 'Unknown')}</strong>:
+          ${esc((msg.replyTo.text || '').slice(0, 60))}${(msg.replyTo.text?.length || 0) > 60 ? '...' : ''}
+        </div>`;
+            }
+
+            return `
+      <div class="msg" id="msg-${msg.id}">
+        <div class="msg-avatar">
+          ${photo
+                    ? `<img src="${esc(photo)}" alt=""
+                    onerror="this.parentElement.textContent='${initials}'">`
+                    : initials}
+        </div>
+        <div class="msg-body">
+          ${replyHTML}
+          <div class="msg-meta">
+            <span class="msg-name ${msg.isAI ? 'ai' : ''}">
+              ${msg.isAI
+                    ? '<i class="fa-solid fa-wand-magic-sparkles mr-1" style="font-size:9px;"></i>'
+                    : ''}
+              ${esc(m.displayName || msg.displayName || 'Unknown')}
+            </span>
+            <span class="msg-time">${formatTime(msg.createdAt)}</span>
+            ${msg.edited ? '<span style="font-size:10px;color:var(--muted2);">(edited)</span>' : ''}
+          </div>
+          <div class="msg-text ${msg.deleted ? 'deleted' : ''}"
+               id="msg-text-${msg.id}">${textContent}</div>
+        </div>
+        <div class="msg-actions">
+          <button class="icon-btn" onclick="window.replyMsg('${msg.id}')" title="Reply">
+            <i class="fa-solid fa-reply"></i>
+          </button>
+          ${canEdit ? `
+          <button class="icon-btn" onclick="window.editMsg('${msg.id}')" title="Edit">
+            <i class="fa-solid fa-pen"></i>
+          </button>` : ''}
+          ${canDel ? `
+          <button class="icon-btn danger" onclick="window.deleteMsg('${msg.id}')" title="Delete">
+            <i class="fa-solid fa-trash"></i>
+          </button>` : ''}
+        </div>
+      </div>`;
+        }
+
+        function appendMessage(msg) {
+            const container = document.getElementById('messages');
+            if (document.getElementById(`msg-${msg.id}`)) return;
+            const div = document.createElement('div');
+            div.innerHTML = buildMsgHTML(msg);
+            const el = div.firstElementChild;
+            container.appendChild(el);
+            el.querySelectorAll('pre code').forEach(b => hljs.highlightElement(b));
+        }
+
+
+        function updateMessageEl(id, data) {
+            const el = document.getElementById(`msg-${id}`);
+            if (!el) return;
+            const tmp = document.createElement('div');
+            tmp.innerHTML = buildMsgHTML({ id, ...data });
+            const newEl = tmp.firstElementChild;
+            el.replaceWith(newEl); // ← in DOM first
+            newEl.querySelectorAll('pre code').forEach(b => hljs.highlightElement(b));
+        }
+
+
+        function scrollToBottom() {
+            const el = document.getElementById('messages');
+            const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
+            if (atBottom) el.scrollTop = el.scrollHeight;
+        }
+
+        // ─────────────────────────────────────
+        //  SUBSCRIBE MESSAGES  (Firestore realtime)
+        // ─────────────────────────────────────
+        function subscribeMessages() {
+            const q = query(
+                collection(db, 'rooms', roomId, 'messages'),
+                orderBy('createdAt', 'asc'),
+                limit(100)
+            );
+            unsubMessages = onSnapshot(q, (snap) => {
+                snap.docChanges().forEach(change => {
+                    if (change.type === 'added') appendMessage({ id: change.doc.id, ...change.doc.data() });
+                    if (change.type === 'modified') updateMessageEl(change.doc.id, change.doc.data());
+                    if (change.type === 'removed') document.getElementById(`msg-${change.doc.id}`)?.remove();
+                });
+                scrollToBottom();
+            });
+        }
+
+        // ─────────────────────────────────────
+        //  SEND MESSAGE
+        // ─────────────────────────────────────
+        window.sendMessage = async () => {
+            const inp = document.getElementById('chat-input');
+            const text = inp.value.trim();
+            if (!text) return;
+
+            // Clear typing
+            clearTimeout(typingTimer);
+            const token = await getToken();
+            fetch(`/api/rooms/${roomId}/typing`, {
+                method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` }
+            });
+
+            inp.value = '';
+            inp.style.height = 'auto';
+            document.getElementById('send-btn').disabled = true;
+
+            try {
+                const msgData = {
+                    uid: currentUser.uid,
+                    displayName: currentUser.displayName || '',
+                    photoURL: currentUser.photoURL || '',
+                    text,
+                    createdAt: serverTimestamp(),
+                    deleted: false,
+                    edited: false
+                };
+                if (replyTo) { msgData.replyTo = replyTo; cancelReply(); }
+
+                const ref = await addDoc(
+                    collection(db, 'rooms', roomId, 'messages'),
+                    msgData
+                );
+
+                // If @ai mentioned — fetch AI reply and post as message
+                if (text.toLowerCase().includes('@ai')) {
+                    handleAIMention(ref.id, text);
+                }
+            } catch (err) {
+                showToast('Failed to send: ' + err.message, 'error');
+            } finally {
+                document.getElementById('send-btn').disabled = false;
+            }
+        };
+
+        // @ai in group chat
+        async function handleAIMention(triggerMsgId, text) {
+            try {
+                const prompt = text.replace(/@ai\b/gi, '').trim();
+                const token = await getToken();
+                const res = await fetch('/api/ai/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                    body: JSON.stringify({ prompt, roomId })
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error);
+
+                await addDoc(collection(db, 'rooms', roomId, 'messages'), {
+                    uid: 'ai',
+                    displayName: 'AI Assistant',
+                    photoURL: '',
+                    text: data.reply,
+                    textHtml: data.replyHtml,   // ← server-parsed markdown HTML
+                    isAI: true,
+                    createdAt: serverTimestamp(),
+                    deleted: false,
+                    edited: false,
+                    replyTo: {
+                        id: triggerMsgId,
+                        uid: currentUser.uid,
+                        name: currentUser.displayName || '',
+                        text: document.getElementById(`msg-text-${triggerMsgId}`)
+                            ?.textContent?.slice(0, 60) || ''
+                    }
+                });
+            } catch (err) {
+                showToast('AI error: ' + err.message, 'error');
+            }
+        }
+
+        // ─────────────────────────────────────
+        //  REPLY / EDIT / DELETE
+        // ─────────────────────────────────────
+        window.replyMsg = (id) => {
+            const txt = document.getElementById(`msg-text-${id}`)?.textContent || '';
+            const name = document.querySelector(`#msg-${id} .msg-name`)?.textContent?.trim() || '';
+            replyTo = { id, uid: '', name, text: txt };
+            document.getElementById('reply-name').textContent = name;
+            document.getElementById('reply-preview').textContent = txt.slice(0, 40) + (txt.length > 40 ? '...' : '');
+            document.getElementById('reply-bar').classList.add('show');
+            document.getElementById('chat-input').focus();
+        };
+
+        function cancelReply() {
+            replyTo = null;
+            document.getElementById('reply-bar').classList.remove('show');
+        }
+        window.cancelReply = cancelReply;
+
+        window.editMsg = (id) => {
+            const textEl = document.getElementById(`msg-text-${id}`);
+            const cur = textEl?.textContent || '';
+            if (!textEl) return;
+            textEl.style.display = 'none';
+            const editDiv = document.createElement('div');
+            editDiv.innerHTML = `
+      <textarea class="edit-input" id="edit-inp-${id}">${esc(cur)}</textarea>
+      <div class="edit-actions">
+        <button class="edit-save"   onclick="window.saveEdit('${id}')">Save</button>
+        <button class="edit-cancel" onclick="window.cancelEdit('${id}')">Cancel</button>
+      </div>`;
+            textEl.parentElement.appendChild(editDiv);
+            document.getElementById(`edit-inp-${id}`)?.focus();
+        };
+
+        window.saveEdit = async (id) => {
+            const inp = document.getElementById(`edit-inp-${id}`);
+            const txt = inp?.value.trim();
+            if (!txt) return;
+            try {
+                await updateDoc(doc(db, 'rooms', roomId, 'messages', id), {
+                    text: txt, edited: true
+                });
+            } catch (err) {
+                showToast('Edit failed: ' + err.message, 'error');
+            }
+        };
+
+        window.cancelEdit = (id) => {
+            document.getElementById(`edit-inp-${id}`)?.closest('div')?.remove();
+            const textEl = document.getElementById(`msg-text-${id}`);
+            if (textEl) textEl.style.display = '';
+        };
+
+        window.deleteMsg = async (id) => {
+            try {
+                const token = await getToken();
+                const res = await fetch(`/api/rooms/${roomId}/messages/${id}`, {
+                    method: 'DELETE',
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (!res.ok) throw new Error((await res.json()).error);
+            } catch (err) {
+                showToast(err.message, 'error');
+            }
+        };
+
+        // ─────────────────────────────────────
+        //  CHAT INPUT  (auto-resize + mention)
+        // ─────────────────────────────────────
+        window.onChatInput = (e) => {
+            const inp = e.target;
+            inp.style.height = 'auto';
+            inp.style.height = Math.min(inp.scrollHeight, 120) + 'px';
+
+            // Typing indicator
+            getToken().then(token => {
+                fetch(`/api/rooms/${roomId}/typing`, {
+                    method: 'POST', headers: { 'Authorization': `Bearer ${token}` }
+                });
+                clearTimeout(typingTimer);
+                typingTimer = setTimeout(() => {
+                    fetch(`/api/rooms/${roomId}/typing`, {
+                        method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` }
+                    });
+                }, 3000);
+            });
+
+            // Mention trigger
+            const val = inp.value;
+            const pos = inp.selectionStart;
+            const before = val.slice(0, pos);
+            const match = before.match(/@(\w*)$/);
+            if (match) {
+                showMentionDropdown(match[1].toLowerCase());
+            } else {
+                hideMentionDropdown();
+            }
+        };
+
+        window.onChatKeydown = (e) => {
+            const drop = document.getElementById('mention-dropdown');
+            if (drop.classList.contains('show')) {
+                if (e.key === 'ArrowDown') { e.preventDefault(); mentionIndex = Math.min(mentionIndex + 1, mentionList.length - 1); renderMentionItems(); return; }
+                if (e.key === 'ArrowUp') { e.preventDefault(); mentionIndex = Math.max(mentionIndex - 1, 0); renderMentionItems(); return; }
+                if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); selectMention(mentionIndex); return; }
+                if (e.key === 'Escape') { hideMentionDropdown(); return; }
+            }
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                window.sendMessage();
+            }
+        };
+
+        function showMentionDropdown(query) {
+            const allItems = [
+                { name: 'ai', label: 'AI Assistant', isAI: true },
+                ...Object.values(members).map(m => ({
+                    name: m.displayName,
+                    label: m.displayName,
+                    photo: m.photoURL
+                }))
+            ];
+            mentionList = allItems.filter(i => i.name?.toLowerCase().includes(query));
+            if (!mentionList.length) { hideMentionDropdown(); return; }
+            mentionIndex = 0;
+            renderMentionItems();
+            document.getElementById('mention-dropdown').classList.add('show');
+        }
+
+        function renderMentionItems() {
+            document.getElementById('mention-dropdown').innerHTML = mentionList.map((item, i) => `
+      <div class="mention-item ${i === mentionIndex ? 'selected' : ''}"
+           onclick="window.selectMention(${i})">
+        <div class="mention-avatar">
+          ${item.isAI
+                    ? '<i class="fa-solid fa-wand-magic-sparkles" style="color:#a78bfa;font-size:10px;"></i>'
+                    : item.photo
+                        ? `<img src="${esc(item.photo)}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`
+                        : `<span style="font-size:8px;">${getInitials(item.label)}</span>`}
+        </div>
+        <span style="color:var(--text);">${esc(item.label)}</span>
+      </div>`).join('');
+        }
+
+        window.selectMention = (idx) => {
+            const item = mentionList[idx];
+            if (!item) return;
+            const inp = document.getElementById('chat-input');
+            const val = inp.value;
+            const pos = inp.selectionStart;
+            const before = val.slice(0, pos).replace(/@\w*$/, '');
+            inp.value = before + `@${item.name} ` + val.slice(pos);
+            inp.selectionStart = inp.selectionEnd = (before + `@${item.name} `).length;
+            hideMentionDropdown();
+            inp.focus();
+        };
+
+        function hideMentionDropdown() {
+            document.getElementById('mention-dropdown').classList.remove('show');
+        }
+
+        window.triggerMention = () => {
+            const inp = document.getElementById('chat-input');
+            inp.value += '@';
+            inp.focus();
+            showMentionDropdown('');
+        };
+
+        window.insertCode = () => {
+            const inp = document.getElementById('chat-input');
+            const pos = inp.selectionStart;
+            const snippet = '```js\n// code here\n```';
+            inp.value = inp.value.slice(0, pos) + snippet + inp.value.slice(pos);
+            inp.focus();
+            inp.selectionStart = inp.selectionEnd = pos + 7;
+        };
+
+        // ─────────────────────────────────────
+        //  TYPING INDICATOR  (Firestore realtime)
+        // ─────────────────────────────────────
+        function subscribeTyping() {
+            unsubTyping = onSnapshot(
+                collection(db, 'rooms', roomId, 'typing'),
+                (snap) => {
+                    const typists = snap.docs
+                        .filter(d => d.id !== currentUser.uid)
+                        .map(d => d.data().name);
+                    renderTypingIndicator(typists);
+                }
+            );
+        }
+
+        function renderTypingIndicator(typists) {
+            let el = document.getElementById('typing-indicator');
+            if (!el) {
+                el = document.createElement('div');
+                el.id = 'typing-indicator';
+                el.style.cssText =
+                    'padding:2px 16px 6px;font-size:11px;color:var(--muted);min-height:22px;transition:opacity 0.2s ease;';
+                const inputArea = document.getElementById('chat-input-area');
+                inputArea.parentElement.insertBefore(el, inputArea);
+            }
+            if (!typists.length) { el.style.opacity = '0'; el.textContent = ''; return; }
+            el.style.opacity = '1';
+            const names = typists.slice(0, 3).join(', ');
+            el.innerHTML = `
+      <span style="color:var(--indigo2);">${esc(names)}</span>
+      ${typists.length === 1 ? 'is' : 'are'} typing
+      <span style="display:inline-flex;gap:2px;margin-left:2px;vertical-align:middle;">
+        <span style="animation:bounce 1.2s infinite 0s;  display:inline-block;font-size:16px;line-height:0.8;">·</span>
+        <span style="animation:bounce 1.2s infinite 0.2s;display:inline-block;font-size:16px;line-height:0.8;">·</span>
+        <span style="animation:bounce 1.2s infinite 0.4s;display:inline-block;font-size:16px;line-height:0.8;">·</span>
+      </span>`;
+        }
+
+        // ─────────────────────────────────────
+        //  CODE EDITOR  (CodeMirror)
+        // ─────────────────────────────────────
+        function initEditor() {
+            editorInstance = CodeMirror(document.getElementById('editor-container'), {
+                value: '// Welcome to StackRoom\n',
+                mode: 'javascript',
+                theme: 'dracula',
+                lineNumbers: true,
+                tabSize: 2,
+                indentWithTabs: false,
+                lineWrapping: false,
+                autoCloseBrackets: true,
+                matchBrackets: true,
+                extraKeys: {
+                    'Ctrl-S': () => window.submitPR(),
+                    'Cmd-S': () => window.submitPR()
+                }
+            });
+            loadFiles();
+        }
+
+        // ─────────────────────────────────────
+        //  FILE EXPLORER
+        // ─────────────────────────────────────
+        window.loadFiles = async () => {
+            try {
+                const token = await getToken();
+                const res = await fetch(`/api/rooms/${roomId}/files`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (!res.ok) throw new Error((await res.json()).error);
+                files = await res.json();
+                renderFileList();
+            } catch (err) {
+                console.error('loadFiles:', err.message);
+            }
+        };
+
+        function renderFileList() {
+            const list = document.getElementById('file-list');
+            if (!list) return;
+
+            if (!files.length) {
+                list.innerHTML = `
+        <div style="padding:20px 8px;text-align:center;">
+          <i class="fa-solid fa-folder-open" style="color:var(--muted2);font-size:20px;margin-bottom:8px;display:block;"></i>
+          <p style="font-size:11px;color:var(--muted2);">No files yet</p>
+          <p style="font-size:10px;color:var(--muted2);margin-top:2px;">Click + to create one</p>
+        </div>`;
+                return;
+            }
+
+            list.innerHTML = files.map(f => {
+                const icon =
+                    f.fileName.endsWith('.js') ? 'fa-brands fa-js' :
+                        f.fileName.endsWith('.py') ? 'fa-brands fa-python' :
+                            f.fileName.endsWith('.html') ? 'fa-solid fa-code' :
+                                f.fileName.endsWith('.css') ? 'fa-brands fa-css3-alt' :
+                                    f.fileName.endsWith('.json') ? 'fa-solid fa-brackets-curly' :
+                                        'fa-solid fa-file-code';
+                const isActive = f.id === activeFileId;
+                return `
+        <div onclick="window.openFile('${f.id}')"
+             style="padding:5px 10px;border-radius:7px;cursor:pointer;font-size:12px;
+                    display:flex;align-items:center;gap:8px;
+                    background:${isActive ? 'var(--indigo3)' : 'transparent'};
+                    color:${isActive ? 'var(--indigo2)' : 'var(--text)'};
+                    transition:background 0.15s ease;"
+             onmouseover="if(this.style.background!=='var(--indigo3)')this.style.background='var(--bg3)'"
+             onmouseout="if('${f.id}'!=='${activeFileId}')this.style.background='transparent'">
+          <i class="${icon}" style="font-size:11px;color:${isActive ? 'var(--indigo2)' : 'var(--muted2)'};flex-shrink:0;"></i>
+          <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">${esc(f.fileName)}</span>
+          ${myRole === 'admin' ? `
+            <button onclick="event.stopPropagation();window.deleteFile('${f.id}')"
+              style="opacity:0;width:16px;height:16px;border:none;background:transparent;
+                     cursor:pointer;color:var(--muted2);font-size:10px;"
+              onmouseover="this.style.opacity='1';this.style.color='#f87171'"
+              onmouseout="this.style.opacity='0'"
+              title="Delete file">
+              <i class="fa-solid fa-trash"></i>
+            </button>` : ''}
+        </div>`;
+            }).join('');
+        }
+
+        window.openFile = (id) => {
+            const file = files.find(f => f.id === id);
+            if (!file || !editorInstance) return;
+            activeFileId = id;
+            editorInstance.setValue(file.content || '');
+            editorInstance.setOption('mode', file.language || 'javascript');
+            document.getElementById('file-name').value = file.fileName;
+            document.getElementById('tab-code-name').textContent = file.fileName;
+            document.getElementById('lang-select').value = file.language || 'javascript';
+            renderFileList();
+            editorInstance.focus();
+        };
+
+        window.newFile = () => {
+            const name = prompt('File name (e.g. utils.js, main.py):');
+            if (!name?.trim()) return;
+            const trimmed = name.trim();
+            const lang =
+                trimmed.endsWith('.py') ? 'python' :
+                    trimmed.endsWith('.html') ? 'xml' :
+                        trimmed.endsWith('.css') ? 'css' :
+                            trimmed.endsWith('.java') ? 'text/x-java' :
+                                trimmed.endsWith('.c') ? 'text/x-csrc' :
+                                    trimmed.endsWith('.cpp') ? 'text/x-c++src' : 'javascript';
+
+            activeFileId = null;
+            editorInstance.setValue(`// ${trimmed}\n`);
+            editorInstance.setOption('mode', lang);
+            document.getElementById('file-name').value = trimmed;
+            document.getElementById('tab-code-name').textContent = trimmed;
+            document.getElementById('lang-select').value = lang;
+            renderFileList();
+            showToast(`New file: ${trimmed} — press Ctrl+S or submit PR to save.`, 'info');
+            editorInstance.focus();
+        };
+
+        window.deleteFile = async (id) => {
+            if (!confirm('Delete this file? This cannot be undone.')) return;
+            try {
+                const token = await getToken();
+                const res = await fetch(`/api/rooms/${roomId}/files/${id}`, {
+                    method: 'DELETE',
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (!res.ok) throw new Error((await res.json()).error);
+                if (activeFileId === id) {
+                    activeFileId = null;
+                    editorInstance.setValue('');
+                }
+                showToast('File deleted.', 'success');
+                await loadFiles();
+            } catch (err) {
+                showToast(err.message, 'error');
+            }
+        };
+
+        window.onLangChange = () => {
+            const lang = document.getElementById('lang-select').value;
+            editorInstance?.setOption('mode', lang);
+        };
+
+        window.onFileNameChange = () => {
+            const name = document.getElementById('file-name').value;
+            document.getElementById('tab-code-name').textContent = name || 'untitled';
+        };
+
+        window.copyEditorCode = () => {
+            navigator.clipboard.writeText(editorInstance?.getValue() || '');
+            showToast('Code copied!', 'success');
+        };
+
+        // ─────────────────────────────────────
+        //  PULL REQUESTS
+        // ─────────────────────────────────────
+        window.submitPR = async () => {
+            const code = editorInstance?.getValue() || '';
+            const fileName = document.getElementById('file-name').value || 'untitled.js';
+            const language = document.getElementById('lang-select').value || 'javascript';
+            if (!code.trim()) { showToast('Editor is empty.', 'error'); return; }
+
+            try {
+                const token = await getToken();
+                const url = activeFileId
+                    ? `/api/rooms/${roomId}/files/${activeFileId}`
+                    : `/api/rooms/${roomId}/files`;
+
+                const res = await fetch(url, {
+                    method: activeFileId ? 'PATCH' : 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                    body: JSON.stringify({ fileName, language, content: code })
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error);
+
+                showToast(
+                    myRole === 'admin'
+                        ? 'Saved directly (admin).'
+                        : 'PR submitted — waiting for admin approval.',
+                    'success'
+                );
+                await loadPRs();
+            } catch (err) {
+                showToast('PR failed: ' + err.message, 'error');
+            }
+        };
+
+        window.loadPRs = async () => {
+            try {
+                const token = await getToken();
+                const res = await fetch(`/api/rooms/${roomId}/prs`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (!res.ok) throw new Error((await res.json()).error);
+                prList = await res.json();
+                renderPRs();
+            } catch (err) {
+                console.error('loadPRs:', err.message);
+            }
+        };
+
+        window.togglePR = () => {
+            const panel = document.getElementById('pr-panel');
+            panel.classList.toggle('open');
+            if (panel.classList.contains('open')) renderPRs();
+        };
+
+        function renderPRs() {
+            const list = document.getElementById('pr-list');
+            const prCount = document.getElementById('pr-count');
+            if (!list) return;
+
+            const pending = prList.filter(p => p.status === 'pending').length;
+            if (prCount) prCount.textContent = pending;
+
+            if (!prList.length) {
+                list.innerHTML = `
+        <div style="padding:24px;text-align:center;">
+          <i class="fa-solid fa-code-pull-request" style="color:var(--muted);font-size:24px;display:block;margin-bottom:8px;"></i>
+          <p style="font-size:12px;color:var(--muted);">No pull requests yet.</p>
+        </div>`;
+                return;
+            }
+
+            list.innerHTML = prList.map(pr => `
+      <div class="pr-item">
+        <div class="pr-item-title">
+          <i class="fa-solid fa-${pr.type === 'create' ? 'plus' : 'pen'} mr-1"
+             style="color:var(--muted2);font-size:10px;"></i>
+          ${esc(pr.fileName)}
+          <span style="font-size:10px;color:var(--muted2);margin-left:4px;">(${pr.type})</span>
+        </div>
+        <div class="pr-item-meta mb-2">
+          by ${esc(pr.name)} · ${pr.createdAt?.toDate
+                    ? pr.createdAt.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                    : '—'
+                }
+        </div>
+        <div class="flex items-center justify-between gap-2">
+          <span class="pr-status ${pr.status}">${pr.status}</span>
+          ${myRole === 'admin' && pr.status === 'pending' ? `
+            <div class="flex gap-2">
+              <button onclick="window.reviewPR('${pr.id}','approve')"
+                class="icon-btn" style="color:#34d399;border-color:rgba(16,185,129,0.2);" title="Approve">
+                <i class="fa-solid fa-check"></i>
+              </button>
+              <button onclick="window.reviewPR('${pr.id}','reject')"
+                class="icon-btn danger" title="Reject">
+                <i class="fa-solid fa-xmark"></i>
+              </button>
+            </div>` : ''}
+        </div>
+      </div>`).join('');
+        }
+
+        window.reviewPR = async (id, action) => {
+            try {
+                const token = await getToken();
+                const res = await fetch(`/api/rooms/${roomId}/prs/${id}/review`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                    body: JSON.stringify({ action })
+                });
+                if (!res.ok) throw new Error((await res.json()).error);
+                showToast(`PR ${action}d.`, action === 'approve' ? 'success' : 'error');
+                await loadPRs();
+                if (action === 'approve') await loadFiles(); // refresh file tree
+            } catch (err) {
+                showToast(err.message, 'error');
+            }
+        };
+
+        // ─────────────────────────────────────
+        //  AI PANEL  (Personal AI with streaming)
+        // ─────────────────────────────────────
+        window.sendAI = async () => {
+            const inp = document.getElementById('ai-input');
+            const text = inp.value.trim();
+            if (!text) return;
+
+            inp.value = '';
+            inp.style.height = 'auto';
+            document.getElementById('ai-send-btn').disabled = true;
+
+            appendAIMsg('user', text);
+            aiHistory.push({ role: 'user', text });
+
+            const bubbleId = 'ai-bubble-' + Date.now();
+            appendAIStreamBubble(bubbleId);
+
+            let fullText = '';
+
+            try {
+                const token = await getToken();
+                const res = await fetch('/api/ai/private/stream', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                    body: JSON.stringify({ prompt: text, history: aiHistory.slice(-10) })
+                });
+
+                const reader = res.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop(); // keep incomplete line
+
+                    for (const line of lines) {
+                        if (!line.startsWith('data: ')) continue;
+                        try {
+                            const data = JSON.parse(line.slice(6));
+                            if (data.error) throw new Error(data.error);
+                            if (data.chunk) {
+                                fullText += data.chunk;
+                                updateAIStreamBubble(bubbleId, fullText);
+                            }
+                            if (data.done) {
+                                // Use server-parsed HTML on done event
+                                finalizeAIBubble(bubbleId, data.html || marked.parse(fullText));
+                                aiHistory.push({ role: 'ai', text: fullText });
+                            }
+                        } catch { }
+                    }
+                }
+            } catch (err) {
+                finalizeAIBubble(bubbleId, `<p style="color:#f87171;">Error: ${esc(err.message)}</p>`);
+            } finally {
+                document.getElementById('ai-send-btn').disabled = false;
+            }
+        };
+
+        function appendAIMsg(role, text) {
+            const container = document.getElementById('ai-messages');
+            const isUser = role === 'user';
+            const div = document.createElement('div');
+            div.className = `ai-msg ${role}`;
+            div.innerHTML = `
+      <div class="ai-avatar ${isUser ? 'user' : 'ai-bot'}">
+        ${isUser
+                    ? (currentUser?.photoURL
+                        ? `<img src="${esc(currentUser.photoURL)}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;"
+                    onerror="this.parentElement.textContent='${getInitials(currentUser?.displayName || '')}';">`
+                        : getInitials(currentUser?.displayName || ''))
+                    : '<i class="fa-solid fa-wand-magic-sparkles"></i>'}
+      </div>
+      <div class="ai-bubble">${esc(text)}</div>`;
+            container.appendChild(div);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        // Shows typing dots while streaming
+        function appendAIStreamBubble(id) {
+            const container = document.getElementById('ai-messages');
+            const div = document.createElement('div');
+            div.className = 'ai-msg ai';
+            div.innerHTML = `
+      <div class="ai-avatar ai-bot"><i class="fa-solid fa-wand-magic-sparkles"></i></div>
+      <div class="ai-bubble" id="${id}">
+        <div class="ai-typing"><span></span><span></span><span></span></div>
+      </div>`;
+            container.appendChild(div);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        // Updates bubble live as chunks arrive (raw markdown)
+        function updateAIStreamBubble(id, text) {
+            const bubble = document.getElementById(id);
+            if (!bubble) return;
+            bubble.innerHTML = marked.parse(text) + '<span class="stream-cursor">▋</span>';
+            const container = document.getElementById('ai-messages');
+            container.scrollTop = container.scrollHeight;
+        }
+
+        // Final render with highlighted code blocks — removes cursor
+        function finalizeAIBubble(id, html) {
+            const bubble = document.getElementById(id);
+            if (!bubble) return;
+            bubble.innerHTML = html;
+            bubble.querySelectorAll('pre code').forEach(b => hljs.highlightElement(b));
+            const container = document.getElementById('ai-messages');
+            container.scrollTop = container.scrollHeight;
+        }
+
+        window.clearAIChat = () => {
+            aiHistory = [];
+            document.getElementById('ai-messages').innerHTML = `
+      <div class="ai-msg ai">
+        <div class="ai-avatar ai-bot"><i class="fa-solid fa-wand-magic-sparkles"></i></div>
+        <div class="ai-bubble"><p>Chat cleared! What can I help you with?</p></div>
+      </div>`;
+        };
+
+        window.onAIKeydown = (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                window.sendAI();
+            }
+        };
+
+        // ─────────────────────────────────────
+        //  SIGN OUT
+        // ─────────────────────────────────────
+        window.doSignOut = async () => {
+            if (unsubMessages) unsubMessages();
+            if (unsubTyping) unsubTyping();
+            // Clear own typing on leave
+            const token = await getToken();
+            await fetch(`/api/rooms/${roomId}/typing`, {
+                method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` }
+            });
+            await fbSignOut(auth);
+            window.location.href = '/auth/';
+        };
+
+        // ─────────────────────────────────────
+        //  INIT ROOM
+        // ─────────────────────────────────────
+        async function initRoom(user) {
+            currentUser = user;
+            window.currentUser = user;
+
+            roomId = new URLSearchParams(location.search).get('room');
+            if (!roomId) { window.location.href = '/lobby/'; return; }
+
+            setLoaderMsg('Loading room...');
+
+            try {
+                const token = await getToken();
+
+                // Fetch room data
+                const res = await fetch(`/api/rooms/${roomId}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (!res.ok) { window.location.href = '/lobby/'; return; }
+
+                currentRoom = await res.json();
+                members = currentRoom.members || {};
+                myRole = members[user.uid]?.role || 'member';
+
+                // Update UI
+                document.getElementById('sidebar-room-name').textContent = currentRoom.name;
+                document.getElementById('sidebar-code').textContent = currentRoom.inviteCode;
+                document.getElementById('topbar-room').textContent = currentRoom.name;
+                document.title = `${currentRoom.name} — StackRoom`;
+
+                // Show admin actions
+                if (myRole === 'admin') {
+                    document.getElementById('admin-actions').style.cssText = 'display:flex;';
+                }
+
+                renderMembers();
+
+                // Subscribe realtime
+                setLoaderMsg('Connecting to chat...');
+                subscribeMessages();
+                subscribeTyping();
+
+                // Init editor
+                initEditor();
+
+                // Load PRs
+                await loadPRs();
+
+                // Default panel layout
+                applyPanels();
+
+                // Show app
+                document.getElementById('app').style.display = 'flex';
+                hideLoader();
+
+            } catch (err) {
+                showToast('Failed to load room: ' + err.message, 'error');
+                setTimeout(() => { window.location.href = '/lobby/'; }, 2000);
+            }
+        }
+
+        // ─────────────────────────────────────
+        //  AUTH GUARD — always last
+        // ─────────────────────────────────────
+        onAuthStateChanged(auth, (user) => {
+            if (!user) { window.location.href = '/auth/'; return; }
+            initRoom(user);
+        });
+
+    </script>
+
+<script>
+  // ─────────────────────────────────────
+  //  THEME
+  // ─────────────────────────────────────
+  let isDark = localStorage.getItem('theme') !== 'light';
+
+  function applyTheme(dark) {
+    isDark = dark;
+    const html = document.documentElement;
+    if (dark) {
+      html.classList.add('dark');
+      html.classList.remove('light');
+    } else {
+      html.classList.add('light');
+      html.classList.remove('dark');
+    }
+    localStorage.setItem('theme', dark ? 'dark' : 'light');
+
+    // Update CodeMirror theme if editor is open
+    const cm = document.querySelector('.CodeMirror')?.CodeMirror;
+    if (cm) cm.setOption('theme', dark ? 'dracula' : 'default');
+  }
+
+  // Apply instantly on load — prevents flash
+  applyTheme(isDark);
+
+  // Wire toggle — wait for DOM
+  document.addEventListener('DOMContentLoaded', () => {
+    const toggle = document.getElementById('theme-toggle');
+    if (toggle) toggle.onclick = () => applyTheme(!isDark);
+  });
+
+  // ─────────────────────────────────────
+  //  CURSOR GLOW
+  // ─────────────────────────────────────
+  const glowEl = document.getElementById('cursor-glow');
+  if (glowEl) {
+    let mx = innerWidth / 2, my = innerHeight / 2;
+    let cx = mx, cy = my;
+    document.addEventListener('mousemove', e => { mx = e.clientX; my = e.clientY; });
+    (function loop() {
+      cx += (mx - cx) * 0.08;
+      cy += (my - cy) * 0.08;
+      glowEl.style.left = cx + 'px';
+      glowEl.style.top  = cy + 'px';
+      requestAnimationFrame(loop);
+    })();
+  }
+
+  // ─────────────────────────────────────
+  //  CLOSE CTX MENU ON SCROLL
+  // ─────────────────────────────────────
+  document.addEventListener('scroll', () => {
+    document.getElementById('ctx-menu')?.classList.remove('show');
+  }, true);
+
+  // ─────────────────────────────────────
+  //  KEYBOARD SHORTCUTS
+  // ─────────────────────────────────────
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      document.querySelectorAll('.modal-overlay.open').forEach(m => {
+        m.classList.remove('open');
+      });
+      document.getElementById('ctx-menu')?.classList.remove('show');
+    }
+  });
+</script>
+
+</body>
+
+</html>

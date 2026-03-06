@@ -1,0 +1,896 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>StackRoom — Lobby</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: { extend: { fontFamily: { mono: ['JetBrains Mono', 'monospace'] } } }
+    }
+  </script>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"/>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+  <style>
+    * { font-family: 'JetBrains Mono', monospace; box-sizing: border-box; }
+
+    :root {
+      --bg: #09090b; --bg2: #111113; --bg3: rgba(255,255,255,0.03);
+      --border: rgba(255,255,255,0.06); --border-hover: rgba(99,102,241,0.4);
+      --text: #f4f4f5; --muted: #71717a; --muted2: #52525b;
+    }
+    html.light {
+      --bg: #fafafa; --bg2: #f4f4f5; --bg3: rgba(0,0,0,0.02);
+      --border: rgba(0,0,0,0.08); --border-hover: rgba(99,102,241,0.5);
+      --text: #18181b; --muted: #52525b; --muted2: #a1a1aa;
+    }
+
+    body {
+      background: var(--bg); color: var(--text);
+      min-height: 100vh; transition: background 0.4s ease;
+      overflow-x: hidden;
+    }
+
+    .grid-bg {
+      background-image:
+        linear-gradient(rgba(99,102,241,0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(99,102,241,0.04) 1px, transparent 1px);
+      background-size: 40px 40px;
+    }
+
+    /* ── Page loader ── */
+    #page-loader {
+      position: fixed; inset: 0; z-index: 9999;
+      background: var(--bg);
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 16px; transition: opacity 0.4s ease;
+    }
+    #page-loader.hidden { opacity: 0; pointer-events: none; }
+    .loader-ring {
+      width: 40px; height: 40px;
+      border: 3px solid rgba(99,102,241,0.15);
+      border-top-color: #6366f1;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Cursor glow ── */
+    #cursor-glow {
+      position: fixed; width: 400px; height: 400px;
+      border-radius: 50%; pointer-events: none; z-index: 0;
+      transform: translate(-50%, -50%);
+      background: radial-gradient(circle, rgba(99,102,241,0.08) 0%, transparent 65%);
+    }
+
+    /* ── Nav ── */
+    nav {
+      background: rgba(9,9,11,0.8);
+      backdrop-filter: blur(20px);
+      border-bottom: 1px solid var(--border);
+      transition: background 0.4s ease;
+    }
+    html.light nav { background: rgba(250,250,250,0.85); }
+
+    /* ── Panel ── */
+    .panel {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      transition: background 0.4s, border-color 0.4s;
+    }
+
+    /* ── Tabs ── */
+    .tab-btn {
+      transition: all 0.3s ease; border-radius: 10px;
+      cursor: pointer; font-size: 13px; padding: 10px 20px;
+      font-weight: 500; color: var(--muted);
+      background: transparent; border: none;
+      font-family: 'JetBrains Mono', monospace; flex: 1;
+    }
+    .tab-btn.active {
+      background: rgba(99,102,241,0.12); color: #818cf8;
+      border: 1px solid rgba(99,102,241,0.3);
+    }
+    .tab-btn:hover:not(.active) { color: var(--text); }
+
+    /* ── Inputs ── */
+    .input-field {
+      background: var(--bg3); border: 1px solid var(--border);
+      color: var(--text); border-radius: 12px;
+      padding: 11px 14px; font-size: 12px; outline: none;
+      transition: all 0.3s ease; width: 100%;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .input-field::placeholder { color: var(--muted2); }
+    .input-field:focus {
+      border-color: rgba(99,102,241,0.5);
+      box-shadow: 0 0 0 3px rgba(99,102,241,0.1);
+    }
+    textarea.input-field { resize: none; }
+
+    /* ── Primary button ── */
+    .btn-primary {
+      background: #6366f1; color: white; border: none;
+      border-radius: 12px; padding: 12px 20px; font-size: 13px;
+      font-family: 'JetBrains Mono', monospace; font-weight: 500;
+      cursor: pointer; transition: all 0.3s ease;
+      position: relative; overflow: hidden; width: 100%;
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+    }
+    .btn-primary::before {
+      content: ''; position: absolute; top: 0; left: -100%;
+      width: 100%; height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent);
+      transition: left 0.4s ease;
+    }
+    .btn-primary:hover::before { left: 100%; }
+    .btn-primary:hover { background: #4f46e5; box-shadow: 0 0 25px rgba(99,102,241,0.4); }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* ── Ghost button ── */
+    .btn-ghost {
+      background: transparent; border: 1px solid var(--border);
+      color: var(--muted); border-radius: 10px; padding: 7px 14px;
+      font-size: 12px; font-family: 'JetBrains Mono', monospace;
+      cursor: pointer; transition: all 0.3s ease;
+    }
+    .btn-ghost:hover { border-color: var(--border-hover); color: var(--text); }
+
+    /* ── Room cards ── */
+    .room-card {
+      background: var(--bg3); border: 1px solid var(--border);
+      border-radius: 12px; transition: all 0.3s ease; cursor: pointer;
+    }
+    .room-card:hover {
+      border-color: var(--border-hover); transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(99,102,241,0.1);
+    }
+
+    /* ── Badges ── */
+    .badge { border-radius: 999px; padding: 2px 10px; font-size: 11px; }
+    .badge-admin  { background: rgba(99,102,241,0.12); color: #818cf8; border: 1px solid rgba(99,102,241,0.25); }
+    .badge-member { background: rgba(16,185,129,0.08); color: #34d399; border: 1px solid rgba(16,185,129,0.2); }
+    .badge-viewer { background: rgba(245,158,11,0.08); color: #fbbf24; border: 1px solid rgba(245,158,11,0.2); }
+
+    /* ── Avatar ── */
+    .avatar {
+      width: 32px; height: 32px; border-radius: 50%;
+      background: rgba(99,102,241,0.15); border: 1px solid rgba(99,102,241,0.2);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; font-weight: 600; color: #818cf8;
+      overflow: hidden; flex-shrink: 0;
+    }
+    .avatar img { width: 100%; height: 100%; object-fit: cover; }
+
+    /* ── Modal ── */
+    #invite-modal {
+      position: fixed; inset: 0; z-index: 200;
+      background: rgba(0,0,0,0.7); backdrop-filter: blur(8px);
+      display: none; align-items: center; justify-content: center;
+    }
+    #invite-modal.open { display: flex; }
+    .modal-card {
+      background: var(--bg2); border: 1px solid var(--border);
+      border-radius: 20px; padding: 32px; width: 100%;
+      max-width: 440px; margin: 16px; position: relative;
+    }
+
+    /* ── Copy box ── */
+    .copy-box {
+      background: var(--bg3); border: 1px solid var(--border);
+      border-radius: 10px; padding: 10px 14px;
+      display: flex; align-items: center;
+      justify-content: space-between; gap: 8px;
+    }
+    .copy-btn {
+      background: rgba(99,102,241,0.1); border: 1px solid rgba(99,102,241,0.2);
+      color: #818cf8; border-radius: 8px; padding: 4px 10px;
+      font-size: 11px; font-family: 'JetBrains Mono', monospace;
+      cursor: pointer; transition: all 0.2s ease; white-space: nowrap;
+    }
+    .copy-btn:hover { background: rgba(99,102,241,0.2); }
+
+    /* ── Toast ── */
+    #toast {
+      position: fixed; bottom: 24px; left: 50%;
+      transform: translateX(-50%) translateY(80px);
+      background: var(--bg2); border: 1px solid var(--border);
+      border-radius: 12px; padding: 12px 20px; font-size: 12px;
+      color: var(--text); display: flex; align-items: center;
+      gap: 8px; z-index: 300; transition: transform 0.4s ease;
+      white-space: nowrap;
+    }
+    #toast.show    { transform: translateX(-50%) translateY(0); }
+    #toast.error   { border-color: rgba(239,68,68,0.4); }
+    #toast.success { border-color: rgba(16,185,129,0.4); }
+
+    /* ── Theme toggle ── */
+    #theme-toggle {
+      width: 36px; height: 20px; background: rgba(99,102,241,0.2);
+      border: 1px solid rgba(99,102,241,0.3); border-radius: 999px;
+      cursor: pointer; position: relative; transition: all 0.3s ease;
+    }
+    #theme-toggle::after {
+      content: ''; position: absolute; width: 12px; height: 12px;
+      border-radius: 50%; background: #6366f1; top: 3px; left: 3px;
+      transition: transform 0.3s ease;
+    }
+    html.light #theme-toggle::after { transform: translateX(16px); }
+
+    /* ── Btn spinner ── */
+    .btn-spinner {
+      width: 14px; height: 14px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: white; border-radius: 50%;
+      animation: spin 0.7s linear infinite; display: none;
+    }
+
+    /* ── Field label ── */
+    .field-label {
+      font-size: 11px; color: var(--muted);
+      margin-bottom: 6px; display: block; letter-spacing: 0.03em;
+    }
+
+    /* ── Tag ── */
+    .tag {
+      border: 1px solid rgba(99,102,241,0.3);
+      background: rgba(99,102,241,0.08); color: #818cf8;
+    }
+
+    /* ── Noise ── */
+    .noise {
+      position: fixed; inset: 0; pointer-events: none; z-index: 9998; opacity: 0.02;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    }
+
+    /* ── Skeleton ── */
+    .skeleton {
+      background: var(--border);
+      border-radius: 6px;
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+    /* ── Empty state ── */
+    .empty-state {
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      padding: 48px 24px; text-align: center;
+    }
+  </style>
+</head>
+<body class="grid-bg">
+
+  <!-- ═══ PAGE LOADER ═══ -->
+  <div id="page-loader">
+    <div class="flex items-center gap-2 mb-2">
+      <div class="w-6 h-6 rounded-md bg-indigo-500 flex items-center justify-center">
+        <i class="fa-solid fa-code text-white text-xs"></i>
+      </div>
+      <span class="font-bold text-sm" style="color: var(--text);">StackRoom</span>
+    </div>
+    <div class="loader-ring"></div>
+    <p class="text-xs" style="color: var(--muted);" id="loader-msg">Authenticating...</p>
+  </div>
+
+  <div class="noise"></div>
+  <div id="cursor-glow"></div>
+
+  <!-- ═══ NAV ═══ -->
+  <nav class="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-6 py-4">
+    <a href="/" class="flex items-center gap-2 hover:opacity-80 transition-opacity">
+      <div class="w-6 h-6 rounded-md bg-indigo-500 flex items-center justify-center">
+        <i class="fa-solid fa-code text-white text-xs"></i>
+      </div>
+      <span class="font-bold text-sm" style="color: var(--text);">StackRoom</span>
+    </a>
+    <div class="flex items-center gap-4">
+      <div class="flex items-center gap-2">
+        <div class="avatar" id="nav-avatar">
+          <i class="fa-solid fa-user text-xs"></i>
+        </div>
+        <span class="text-xs hidden md:block" style="color: var(--muted);" id="nav-name"></span>
+      </div>
+      <div class="flex items-center gap-2">
+        <i class="fa-solid fa-moon text-xs" id="theme-icon" style="color: var(--muted);"></i>
+        <div id="theme-toggle"></div>
+      </div>
+      <button onclick="window.signOut()" class="btn-ghost">
+        <i class="fa-solid fa-right-from-bracket mr-1"></i>Sign out
+      </button>
+    </div>
+  </nav>
+
+  <!-- ═══ MAIN ═══ -->
+  <main class="pt-20 pb-12 px-4 md:px-8 max-w-6xl mx-auto relative" style="z-index: 10;">
+
+    <div class="mb-8" id="page-header" style="opacity:0; transform: translateY(20px);">
+      <h1 class="text-2xl font-bold mb-1" style="color: var(--text);">Lobby</h1>
+      <p class="text-xs" style="color: var(--muted);">Create a new room or join an existing one.</p>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-5 gap-6">
+
+      <!-- ── LEFT: Create / Join ── -->
+      <div class="lg:col-span-2" id="left-panel" style="opacity:0; transform: translateY(20px);">
+        <div class="panel p-6">
+
+          <!-- Tabs -->
+          <div class="flex gap-2 mb-6 p-1 rounded-xl" style="background: var(--bg3);">
+            <button class="tab-btn active" id="tab-create" onclick="window.switchTab('create')">
+              <i class="fa-solid fa-plus mr-2"></i>Create
+            </button>
+            <button class="tab-btn" id="tab-join" onclick="window.switchTab('join')">
+              <i class="fa-solid fa-right-to-bracket mr-2"></i>Join
+            </button>
+          </div>
+
+          <!-- CREATE FORM -->
+          <div id="form-create">
+            <div class="mb-4">
+              <label class="field-label">
+                Room Name <span class="text-red-400">*</span>
+              </label>
+              <input id="room-name" type="text" class="input-field"
+                placeholder="e.g. Backend Bugs Sprint" maxlength="50"/>
+            </div>
+            <div class="mb-4">
+              <label class="field-label">
+                Description
+                <span style="color: var(--muted2);">(optional)</span>
+              </label>
+              <textarea id="room-desc" class="input-field" rows="3"
+                placeholder="What are you working on?"></textarea>
+            </div>
+            <div class="mb-6">
+              <label class="field-label">
+                GitHub Repo URL
+                <span style="color: var(--muted2);">(optional)</span>
+              </label>
+              <div class="relative">
+                <i class="fa-brands fa-github absolute left-3 top-1/2 -translate-y-1/2 text-xs"
+                   style="color: var(--muted2);"></i>
+                <input id="room-repo" type="url" class="input-field" style="padding-left: 30px;"
+                  placeholder="https://github.com/user/repo"/>
+              </div>
+            </div>
+            <button class="btn-primary" id="btn-create" onclick="window.createRoom()">
+              <div class="btn-spinner" id="spinner-create"></div>
+              <i class="fa-solid fa-plus" id="icon-create"></i>
+              <span id="label-create">Create Room</span>
+            </button>
+          </div>
+
+          <!-- JOIN FORM -->
+          <div id="form-join" style="display:none;">
+            <div class="mb-3">
+              <label class="field-label">
+                Invite Code <span class="text-red-400">*</span>
+              </label>
+              <input id="join-code" type="text" class="input-field text-center"
+                style="letter-spacing: 0.25em; font-size: 20px; font-weight: 700;"
+                placeholder="X7K9AB" maxlength="8"
+                oninput="this.value = this.value.toUpperCase()"/>
+            </div>
+            <p class="text-xs mb-6" style="color: var(--muted);">
+              Ask your room admin for the 6-character invite code.
+            </p>
+            <button class="btn-primary" id="btn-join" onclick="window.joinRoom()">
+              <div class="btn-spinner" id="spinner-join"></div>
+              <i class="fa-solid fa-right-to-bracket" id="icon-join"></i>
+              <span id="label-join">Join Room</span>
+            </button>
+          </div>
+
+        </div>
+
+        <!-- Tip -->
+        <div class="mt-4 tag rounded-xl px-4 py-3 text-xs leading-5">
+          <i class="fa-solid fa-lightbulb mr-2"></i>
+          Use <span class="font-bold">@ai</span> in any room chat for instant AI coding help.
+        </div>
+      </div>
+
+      <!-- ── RIGHT: My Rooms ── -->
+      <div class="lg:col-span-3" id="right-panel" style="opacity:0; transform: translateY(20px);">
+        <div class="panel p-6">
+
+          <div class="flex items-center justify-between mb-5">
+            <div>
+              <h2 class="text-sm font-semibold" style="color: var(--text);">My Rooms</h2>
+              <p class="text-xs mt-0.5" style="color: var(--muted);" id="rooms-count"></p>
+            </div>
+            <button onclick="window.loadRooms()" class="btn-ghost" id="refresh-btn">
+              <i class="fa-solid fa-rotate-right text-xs"></i>
+            </button>
+          </div>
+
+          <!-- Skeletons -->
+          <div id="rooms-skeleton">
+            <div class="room-card p-4 mb-3">
+              <div class="skeleton h-3 mb-2" style="width:55%;"></div>
+              <div class="skeleton h-2 mb-3" style="width:35%;"></div>
+              <div class="skeleton h-2" style="width:45%;"></div>
+            </div>
+            <div class="room-card p-4 mb-3">
+              <div class="skeleton h-3 mb-2" style="width:40%;"></div>
+              <div class="skeleton h-2 mb-3" style="width:60%;"></div>
+              <div class="skeleton h-2" style="width:30%;"></div>
+            </div>
+            <div class="room-card p-4">
+              <div class="skeleton h-3 mb-2" style="width:50%;"></div>
+              <div class="skeleton h-2" style="width:25%;"></div>
+            </div>
+          </div>
+
+          <!-- Rooms -->
+          <div id="rooms-container"></div>
+
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <!-- ═══ INVITE MODAL ═══ -->
+  <div id="invite-modal">
+    <div class="modal-card" id="modal-content" style="opacity:0; transform: scale(0.95);">
+      <button onclick="window.closeModal()"
+        class="absolute top-4 right-4 w-8 h-8 rounded-lg flex items-center justify-center btn-ghost">
+        <i class="fa-solid fa-xmark text-xs"></i>
+      </button>
+      <div class="w-10 h-10 rounded-xl flex items-center justify-center mb-4"
+           style="background: rgba(16,185,129,0.1); border: 1px solid rgba(16,185,129,0.2);">
+        <i class="fa-solid fa-circle-check text-green-400"></i>
+      </div>
+      <h2 class="text-lg font-bold mb-1" style="color: var(--text);">Room Created!</h2>
+      <p class="text-xs mb-6" style="color: var(--muted);">
+        Share this invite code or link with your teammates.
+      </p>
+      <div class="mb-4">
+        <label class="field-label">Invite Code</label>
+        <div class="copy-box">
+          <span class="text-xl font-bold tracking-widest text-indigo-400" id="modal-code">------</span>
+          <button class="copy-btn" onclick="window.copyText('modal-code', this)">
+            <i class="fa-regular fa-copy mr-1"></i>Copy
+          </button>
+        </div>
+      </div>
+      <div class="mb-6">
+        <label class="field-label">Invite Link</label>
+        <div class="copy-box">
+          <span class="text-xs truncate" style="color: var(--muted); max-width: 260px;" id="modal-link"></span>
+          <button class="copy-btn" onclick="window.copyText('modal-link', this)">
+            <i class="fa-regular fa-copy mr-1"></i>Copy
+          </button>
+        </div>
+      </div>
+      <button class="btn-primary" id="modal-goto">
+        <i class="fa-solid fa-arrow-right"></i>
+        Go to Room
+      </button>
+    </div>
+  </div>
+
+  <!-- ═══ TOAST ═══ -->
+  <div id="toast">
+    <i class="fa-solid fa-circle-info text-indigo-400" id="toast-icon"></i>
+    <span id="toast-msg"></span>
+  </div>
+
+  <!-- ═══ FIREBASE MODULE — ALL LOGIC HERE ═══ -->
+  <script type="module">
+    import { initializeApp }    from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+    import {
+      getAuth, onAuthStateChanged, signOut as fbSignOut
+    }                           from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+
+    // ── Init ──
+    const firebaseConfig = await fetch('/api/config').then(r => r.json());
+    const app  = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+
+    // ─────────────────────────────────────
+    //  HELPERS
+    // ─────────────────────────────────────
+    function getInitials(name) {
+      return name?.split(' ').map(n => n[0]).join('').toUpperCase().slice(0,2) || '?';
+    }
+
+    function escHtml(str) {
+      return String(str)
+        .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+        .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    function getToken() {
+      return window.currentUser?.getIdToken();
+    }
+
+    function hideLoader() {
+      const loader = document.getElementById('page-loader');
+      loader.classList.add('hidden');
+      setTimeout(() => loader.style.display = 'none', 400);
+    }
+
+    function setLoaderMsg(msg) {
+      document.getElementById('loader-msg').textContent = msg;
+    }
+
+    // ─────────────────────────────────────
+    //  TOAST — defined first, exposed to window
+    // ─────────────────────────────────────
+    function showToast(msg, type = 'info') {
+      const toast     = document.getElementById('toast');
+      const toastMsg  = document.getElementById('toast-msg');
+      const toastIcon = document.getElementById('toast-icon');
+      if (!toast) return;
+      toastMsg.textContent  = msg;
+      toastIcon.className   =
+        type === 'error'   ? 'fa-solid fa-circle-xmark text-red-400'  :
+        type === 'success' ? 'fa-solid fa-circle-check text-green-400' :
+                             'fa-solid fa-circle-info text-indigo-400';
+      toast.className = `show ${type}`;
+      setTimeout(() => { toast.className = ''; }, 3500);
+    }
+    window.showToast = showToast;
+
+    // ─────────────────────────────────────
+    //  LOADING STATE FOR BUTTONS
+    // ─────────────────────────────────────
+    function setBtnLoading(type, loading) {
+      const spinner = document.getElementById(`spinner-${type}`);
+      const icon    = document.getElementById(`icon-${type}`);
+      const label   = document.getElementById(`label-${type}`);
+      const btn     = document.getElementById(`btn-${type}`);
+      if (spinner) spinner.style.display = loading ? 'block' : 'none';
+      if (icon)    icon.style.display    = loading ? 'none'  : '';
+      if (label)   label.textContent =
+        loading
+          ? (type === 'create' ? 'Creating...' : 'Joining...')
+          : (type === 'create' ? 'Create Room'  : 'Join Room');
+      if (btn) btn.disabled = loading;
+    }
+
+    // ─────────────────────────────────────
+    //  TAB SWITCH
+    // ─────────────────────────────────────
+    window.switchTab = (tab) => {
+      document.getElementById('tab-create').classList.toggle('active', tab === 'create');
+      document.getElementById('tab-join').classList.toggle('active',   tab === 'join');
+      document.getElementById('form-create').style.display = tab === 'create' ? 'block' : 'none';
+      document.getElementById('form-join').style.display   = tab === 'join'   ? 'block' : 'none';
+    };
+
+    // ─────────────────────────────────────
+    //  INVITE MODAL
+    // ─────────────────────────────────────
+    window.openInviteModal = (code, roomId) => {
+      document.getElementById('modal-code').textContent = code;
+      document.getElementById('modal-link').textContent = `${location.origin}/lobby/?join=${code}`;
+      document.getElementById('modal-goto').onclick = () => {
+        window.location.href = `/chat/?room=${roomId}`;
+      };
+      document.getElementById('invite-modal').classList.add('open');
+      gsap.fromTo('#modal-content',
+        { opacity: 0, scale: 0.92, y: 20 },
+        { opacity: 1, scale: 1, y: 0, duration: 0.4, ease: 'back.out(1.4)' }
+      );
+    };
+
+    window.closeModal = () => {
+      gsap.to('#modal-content', {
+        opacity: 0, scale: 0.94, y: 10, duration: 0.25, ease: 'power2.in',
+        onComplete: () => {
+          document.getElementById('invite-modal').classList.remove('open');
+          gsap.set('#modal-content', { opacity: 0, scale: 0.95, y: 0 });
+        }
+      });
+    };
+
+    document.getElementById('invite-modal').addEventListener('click', (e) => {
+      if (e.target === document.getElementById('invite-modal')) window.closeModal();
+    });
+
+    // ─────────────────────────────────────
+    //  COPY TEXT
+    // ─────────────────────────────────────
+    window.copyText = (elId, btn) => {
+      const text = document.getElementById(elId).textContent;
+      navigator.clipboard.writeText(text).then(() => {
+        btn.innerHTML = '<i class="fa-solid fa-check mr-1"></i>Copied!';
+        setTimeout(() => { btn.innerHTML = '<i class="fa-regular fa-copy mr-1"></i>Copy'; }, 2000);
+      });
+    };
+
+    // ─────────────────────────────────────
+    //  RENDER ROOMS
+    // ─────────────────────────────────────
+    function renderRooms(rooms) {
+      if (!window.currentUser) return;
+      document.getElementById('rooms-skeleton').style.display = 'none';
+      const container = document.getElementById('rooms-container');
+      const countEl   = document.getElementById('rooms-count');
+
+      countEl.textContent = rooms.length === 0
+        ? 'No rooms yet'
+        : `${rooms.length} room${rooms.length > 1 ? 's' : ''}`;
+
+      if (rooms.length === 0) {
+        container.innerHTML = `
+          <div class="empty-state">
+            <div class="w-14 h-14 rounded-2xl mb-4 flex items-center justify-center"
+                 style="background:rgba(99,102,241,0.08);border:1px solid rgba(99,102,241,0.15);">
+              <i class="fa-solid fa-door-open text-indigo-400 text-xl"></i>
+            </div>
+            <p class="text-sm font-semibold mb-1" style="color:var(--text);">No rooms yet</p>
+            <p class="text-xs" style="color:var(--muted);">
+              Create a room or join one with an invite code.
+            </p>
+          </div>`;
+        return;
+      }
+
+      container.innerHTML = rooms.map(room => {
+        const myRole     = room.members?.[window.currentUser.uid]?.role || 'member';
+        const members    = Object.keys(room.members || {}).length;
+        const badgeClass = myRole === 'admin' ? 'badge-admin' :
+                           myRole === 'viewer' ? 'badge-viewer' : 'badge-member';
+        const repoHost   = (() => {
+          try { return room.githubRepo ? new URL(room.githubRepo).hostname : null; }
+          catch { return null; }
+        })();
+
+        return `
+          <div class="room-card p-4 mb-3 flex items-start justify-between gap-3"
+               onclick="window.enterRoom('${escHtml(room.id)}')">
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2 mb-1.5 flex-wrap">
+                <span class="text-sm font-semibold" style="color:var(--text);">${escHtml(room.name)}</span>
+                <span class="badge ${badgeClass}">${myRole}</span>
+              </div>
+              ${room.description
+                ? `<p class="text-xs mb-2" style="color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+                     ${escHtml(room.description)}
+                   </p>`
+                : ''}
+              <div class="flex items-center gap-4 text-xs flex-wrap" style="color:var(--muted2);">
+                <span>
+                  <i class="fa-solid fa-users mr-1"></i>
+                  ${members} member${members !== 1 ? 's' : ''}
+                </span>
+                <span>
+                  <i class="fa-solid fa-key mr-1"></i>${escHtml(room.inviteCode)}
+                </span>
+                ${repoHost ? `
+                  <a href="${escHtml(room.githubRepo)}" target="_blank"
+                     onclick="event.stopPropagation()"
+                     class="flex items-center gap-1 hover:text-indigo-400 transition-colors">
+                    <i class="fa-brands fa-github"></i>${repoHost}
+                  </a>` : ''}
+              </div>
+            </div>
+            <i class="fa-solid fa-chevron-right text-xs mt-1 flex-shrink-0"
+               style="color:var(--muted2);"></i>
+          </div>`;
+      }).join('');
+
+      // Animate room cards in
+      gsap.from('#rooms-container .room-card', {
+        opacity: 0, y: 16, duration: 0.4,
+        stagger: 0, ease: 'power3.out'
+      });
+    }
+
+    // ─────────────────────────────────────
+    //  LOAD ROOMS
+    // ─────────────────────────────────────
+    window.loadRooms = async () => {
+      const btn = document.getElementById('refresh-btn');
+      if (btn) btn.innerHTML = '<i class="fa-solid fa-rotate-right fa-spin text-xs"></i>';
+      document.getElementById('rooms-skeleton').style.display = 'block';
+      document.getElementById('rooms-container').innerHTML = '';
+
+      try {
+        const token = await getToken();
+        const res   = await fetch('/api/rooms', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const rooms = await res.json();
+        if (!res.ok) throw new Error(rooms.error);
+        renderRooms(Array.isArray(rooms) ? rooms : []);
+      } catch (err) {
+        showToast('Failed to load rooms — ' + (err.message || 'unknown error'), 'error');
+        renderRooms([]);
+      } finally {
+        if (btn) btn.innerHTML = '<i class="fa-solid fa-rotate-right text-xs"></i>';
+      }
+    };
+
+    // ─────────────────────────────────────
+    //  CREATE ROOM
+    // ─────────────────────────────────────
+    window.createRoom = async () => {
+      const name = document.getElementById('room-name').value.trim();
+      const desc = document.getElementById('room-desc').value.trim();
+      const repo = document.getElementById('room-repo').value.trim();
+      if (!name) { showToast('Room name is required.', 'error'); return; }
+
+      setBtnLoading('create', true);
+      try {
+        const token = await getToken();
+        const res   = await fetch('/api/rooms/create', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({ name, description: desc, githubRepo: repo })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+
+        document.getElementById('room-name').value = '';
+        document.getElementById('room-desc').value = '';
+        document.getElementById('room-repo').value = '';
+
+        window.openInviteModal(data.inviteCode, data.roomId);
+        await window.loadRooms();
+      } catch (err) {
+        showToast(err.message || 'Failed to create room.', 'error');
+      } finally {
+        setBtnLoading('create', false);
+      }
+    };
+
+    // ─────────────────────────────────────
+    //  JOIN ROOM
+    // ─────────────────────────────────────
+    window.joinRoom = async () => {
+      const code = document.getElementById('join-code').value.trim();
+      if (!code) { showToast('Enter an invite code.', 'error'); return; }
+
+      setBtnLoading('join', true);
+      try {
+        const token = await getToken();
+        const res   = await fetch('/api/rooms/join', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({ inviteCode: code })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+
+        showToast(
+          data.alreadyMember ? 'Already a member — entering room.' : 'Joined! Entering room...',
+          'success'
+        );
+        setTimeout(() => window.enterRoom(data.roomId), 1000);
+      } catch (err) {
+        showToast(err.message || 'Invalid invite code.', 'error');
+      } finally {
+        setBtnLoading('join', false);
+      }
+    };
+
+    // ─────────────────────────────────────
+    //  ENTER ROOM
+    // ─────────────────────────────────────
+    window.enterRoom = (roomId) => {
+      window.location.href = `/chat/?room=${roomId}`;
+    };
+
+    // ─────────────────────────────────────
+    //  SIGN OUT
+    // ─────────────────────────────────────
+    window.signOut = async () => {
+      await fbSignOut(auth);
+      window.location.href = '/auth/';
+    };
+
+    // ─────────────────────────────────────
+    //  ANIMATE IN
+    // ─────────────────────────────────────
+    function animateIn() {
+      gsap.to('#page-header', { opacity:1, y:0, duration:0.5, ease:'power3.out', delay:0.05 });
+      gsap.to('#left-panel',  { opacity:1, y:0, duration:0.5, ease:'power3.out', delay:0.1  });
+      gsap.to('#right-panel', { opacity:1, y:0, duration:0.5, ease:'power3.out', delay:0.15 });
+    }
+
+    // ─────────────────────────────────────
+    //  INIT LOBBY
+    // ─────────────────────────────────────
+    async function initLobby(user) {
+      window.currentUser = user;
+      setLoaderMsg('Loading your rooms...');
+
+      // Nav
+      document.getElementById('nav-name').textContent = user.displayName || user.email;
+      const avatarEl  = document.getElementById('nav-avatar');
+      const photoURL  = sessionStorage.getItem('userPhoto') || user.photoURL;
+      if (photoURL) {
+        sessionStorage.setItem('userPhoto', photoURL);
+        const img   = new Image();
+        img.onload  = () => { avatarEl.innerHTML = `<img src="${photoURL}" alt="avatar"/>`; };
+        img.onerror = () => {
+          sessionStorage.removeItem('userPhoto');
+          avatarEl.textContent = getInitials(user.displayName || user.email);
+        };
+        img.src = photoURL;
+      } else {
+        avatarEl.textContent = getInitials(user.displayName || user.email);
+      }
+
+      // ?join= auto-fill
+      const params   = new URLSearchParams(window.location.search);
+      const joinCode = params.get('join');
+      if (joinCode) {
+        window.switchTab('join');
+        document.getElementById('join-code').value = joinCode.toUpperCase();
+      }
+
+      await window.loadRooms();
+      hideLoader();
+      animateIn();
+
+      if (joinCode) showToast(`Room code detected — click Join.`, 'info');
+    }
+
+    // ─────────────────────────────────────
+    //  AUTH GUARD — always last
+    // ─────────────────────────────────────
+    onAuthStateChanged(auth, (user) => {
+      if (!user) {
+        window.location.href = '/auth/';
+        return;
+      }
+      initLobby(user);
+    });
+
+  </script>
+
+  <!-- ═══ UI ONLY — theme, cursor, particles, keyboard ═══ -->
+  <script>
+    /* ── Theme ── */
+    const html  = document.documentElement;
+    let isDark  = localStorage.getItem('theme') !== 'light';
+    function applyTheme(dark) {
+      isDark = dark;
+      dark ? html.classList.add('dark')     : html.classList.remove('dark');
+      dark ? html.classList.remove('light') : html.classList.add('light');
+      document.getElementById('theme-icon').className =
+        dark ? 'fa-solid fa-moon text-xs' : 'fa-solid fa-sun text-xs';
+      document.getElementById('theme-icon').style.color = 'var(--muted)';
+      localStorage.setItem('theme', dark ? 'dark' : 'light');
+    }
+    applyTheme(isDark);
+    document.getElementById('theme-toggle').onclick = () => applyTheme(!isDark);
+
+    /* ── Cursor glow ── */
+    const glow = document.getElementById('cursor-glow');
+    let mx = innerWidth/2, my = innerHeight/2, cx = mx, cy = my;
+    document.addEventListener('mousemove', e => { mx = e.clientX; my = e.clientY; });
+    (function loop() {
+      cx += (mx-cx)*0.08; cy += (my-cy)*0.08;
+      glow.style.left = cx+'px'; glow.style.top = cy+'px';
+      requestAnimationFrame(loop);
+    })();
+
+    /* ── Enter key shortcuts ── */
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return;
+      const active = document.activeElement;
+      if (active?.id === 'join-code')  window.joinRoom?.();
+      if (active?.id === 'room-name')  window.createRoom?.();
+    });
+  </script>
+</body>
+</html>
