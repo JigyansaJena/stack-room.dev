@@ -1,33 +1,34 @@
 require('dotenv').config();
 
-const express         = require('express');
-const cors            = require('cors');
-const path            = require('path');
-const admin           = require('firebase-admin');
+const express    = require('express');
+const cors       = require('cors');
+const path       = require('path');
+const admin      = require('firebase-admin');
 const { GoogleGenAI } = require('@google/genai');
-const { marked }      = require('marked');
+const { marked } = require('marked');
+const nodemailer = require('nodemailer');
 
-const app   = express();
-const genai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+const mailer = nodemailer.createTransport({
+  host:   process.env.MAIL_HOST,
+  port:   parseInt(process.env.MAIL_PORT) || 587,
+  secure: process.env.MAIL_SECURE === 'true',
+  auth: {
+    user: process.env.MAIL_USER,
+    pass: process.env.MAIL_PASS
+  }
+});
 
-// ─────────────────────────────────────────────────
-//  MARKED CONFIG
-// ─────────────────────────────────────────────────
+const app    = express();
+const genai  = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
 marked.setOptions({ breaks: true, gfm: true });
 
-// ─────────────────────────────────────────────────
-//  MIDDLEWARE
-// ─────────────────────────────────────────────────
 app.use(cors({ origin: '*' }));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, './public')));
 
-// ─────────────────────────────────────────────────
-//  FIREBASE ADMIN
-// ─────────────────────────────────────────────────
 const serviceAccount = require('./service-account.json');
-
 if (!admin.apps.length) {
   admin.initializeApp({
     credential:    admin.credential.cert(serviceAccount),
@@ -38,9 +39,6 @@ if (!admin.apps.length) {
 const db     = admin.firestore();
 const bucket = admin.storage().bucket();
 
-// ─────────────────────────────────────────────────
-//  AUTH MIDDLEWARE
-// ─────────────────────────────────────────────────
 const verifyToken = async (req, res, next) => {
   const token = req.headers.authorization?.split('Bearer ')[1];
   if (!token) return res.status(401).json({ error: 'Unauthorized — no token' });
@@ -60,16 +58,75 @@ const optionalAuth = async (req, res, next) => {
   next();
 };
 
-// ─────────────────────────────────────────────────
-//  HELPERS
-// ─────────────────────────────────────────────────
 function genInviteCode() {
   return Math.random().toString(36).substring(2, 8).toUpperCase();
 }
 
-// ─────────────────────────────────────────────────
-//  CONFIG
-// ─────────────────────────────────────────────────
+async function sendPREmail({ adminEmail, adminName, submitterName, fileName, type, roomName, prId, roomId }) {
+  const actionLabel = type === 'create' ? 'New file' : 'Edit to existing file';
+  const reviewUrl   = `${process.env.APP_URL}/chat/?room=${roomId}`;
+
+  const html = `
+    <div style="font-family:monospace;max-width:520px;margin:0 auto;background:#0f0f14;color:#e2e8f0;padding:32px;border-radius:12px;">
+      <h2 style="color:#a78bfa;margin-top:0;">New Pull Request — ${roomName}</h2>
+      <table style="width:100%;border-collapse:collapse;">
+        <tr>
+          <td style="padding:8px 0;color:#94a3b8;width:140px;">Submitted by</td>
+          <td style="padding:8px 0;">${submitterName}</td>
+        </tr>
+        <tr>
+          <td style="padding:8px 0;color:#94a3b8;">File</td>
+          <td style="padding:8px 0;">${fileName}</td>
+        </tr>
+        <tr>
+          <td style="padding:8px 0;color:#94a3b8;">Type</td>
+          <td style="padding:8px 0;">${actionLabel}</td>
+        </tr>
+      </table>
+      <a href="${reviewUrl}"
+         style="display:inline-block;margin-top:24px;padding:10px 20px;
+                background:#7c3aed;color:#fff;text-decoration:none;
+                border-radius:8px;font-size:14px;">
+        Review in StackRoom
+      </a>
+      <p style="margin-top:24px;font-size:12px;color:#475569;">
+        You are receiving this because you are an admin of "${roomName}".
+      </p>
+    </div>`;
+
+  await mailer.sendMail({
+    from:    process.env.MAIL_FROM,
+    to:      adminEmail,
+    subject: `[StackRoom] New PR from ${submitterName} — ${fileName}`,
+    html
+  });
+}
+
+async function notifyAdmins({ roomId, submitterName, fileName, type, prId }) {
+  const roomSnap   = await db.collection('rooms').doc(roomId).get();
+  const roomData   = roomSnap.data();
+  const adminUids  = Object.entries(roomData.members || {})
+    .filter(([_, m]) => m.role === 'admin').map(([uid]) => uid);
+  const adminSnaps = await Promise.all(
+    adminUids.map(uid => db.collection('users').doc(uid).get())
+  );
+  await Promise.all(
+    adminSnaps
+      .filter(s => s.exists && s.data().email)
+      .map(s => sendPREmail({
+        adminEmail:    s.data().email,
+        adminName:     s.data().displayName || '',
+        submitterName,
+        fileName,
+        type,
+        roomName:      roomData.name,
+        prId,
+        roomId
+      }))
+  );
+}
+
+// ── CONFIG ────────────────────────────────────────
 app.get('/api/config', (req, res) => {
   res.json({
     apiKey:            process.env.FIREBASE_API_KEY,
@@ -81,9 +138,7 @@ app.get('/api/config', (req, res) => {
   });
 });
 
-// ─────────────────────────────────────────────────
-//  AUTH ROUTES
-// ─────────────────────────────────────────────────
+// ── AUTH ──────────────────────────────────────────
 app.get('/api/auth/me', verifyToken, async (req, res) => {
   try {
     const snap = await db.collection('users').doc(req.user.uid).get();
@@ -110,9 +165,7 @@ app.post('/api/auth/profile', verifyToken, async (req, res) => {
   }
 });
 
-// ─────────────────────────────────────────────────
-//  ROOM ROUTES
-// ─────────────────────────────────────────────────
+// ── ROOMS ─────────────────────────────────────────
 app.post('/api/rooms/create', verifyToken, async (req, res) => {
   try {
     const { name, description, githubRepo } = req.body;
@@ -121,11 +174,11 @@ app.post('/api/rooms/create', verifyToken, async (req, res) => {
     const inviteCode = genInviteCode();
     const roomRef    = db.collection('rooms').doc();
 
-    const roomData = {
+    await roomRef.set({
       id:          roomRef.id,
       name,
-      description: description || '',
-      githubRepo:  githubRepo  || '',
+      description: description  || '',
+      githubRepo:  githubRepo   || '',
       inviteCode,
       createdBy:   req.user.uid,
       createdAt:   admin.firestore.FieldValue.serverTimestamp(),
@@ -137,9 +190,7 @@ app.post('/api/rooms/create', verifyToken, async (req, res) => {
           joinedAt:    admin.firestore.FieldValue.serverTimestamp()
         }
       }
-    };
-
-    await roomRef.set(roomData);
+    });
 
     await db.collection('users').doc(req.user.uid).set({
       uid:   req.user.uid,
@@ -148,7 +199,6 @@ app.post('/api/rooms/create', verifyToken, async (req, res) => {
 
     res.json({ roomId: roomRef.id, inviteCode });
   } catch (err) {
-    console.error('Create room error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -161,7 +211,6 @@ app.post('/api/rooms/join', verifyToken, async (req, res) => {
     const snap = await db.collection('rooms')
       .where('inviteCode', '==', inviteCode.toUpperCase())
       .limit(1).get();
-
     if (snap.empty) return res.status(404).json({ error: 'Room not found — check invite code' });
 
     const roomDoc = snap.docs[0];
@@ -186,7 +235,6 @@ app.post('/api/rooms/join', verifyToken, async (req, res) => {
 
     res.json({ roomId: roomDoc.id, alreadyMember: false });
   } catch (err) {
-    console.error('Join room error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -214,14 +262,8 @@ app.get('/api/rooms', verifyToken, async (req, res) => {
     const roomSnaps = await Promise.all(
       roomIds.map(id => db.collection('rooms').doc(id).get())
     );
-
-    const rooms = roomSnaps
-      .filter(s => s.exists)
-      .map(s => ({ id: s.id, ...s.data() }));
-
-    res.json(rooms);
+    res.json(roomSnaps.filter(s => s.exists).map(s => ({ id: s.id, ...s.data() })));
   } catch (err) {
-    console.error('GET /api/rooms error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -231,9 +273,7 @@ app.get('/api/rooms/:roomId', verifyToken, async (req, res) => {
     const snap = await db.collection('rooms').doc(req.params.roomId).get();
     if (!snap.exists) return res.status(404).json({ error: 'Room not found' });
     const room = snap.data();
-    if (!room.members?.[req.user.uid]) {
-      return res.status(403).json({ error: 'You are not a member of this room' });
-    }
+    if (!room.members?.[req.user.uid]) return res.status(403).json({ error: 'Not a member' });
     res.json({ id: snap.id, ...room });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -245,9 +285,7 @@ app.patch('/api/rooms/:roomId', verifyToken, async (req, res) => {
     const { name, description, githubRepo } = req.body;
     const snap = await db.collection('rooms').doc(req.params.roomId).get();
     if (!snap.exists) return res.status(404).json({ error: 'Room not found' });
-    if (snap.data().members?.[req.user.uid]?.role !== 'admin') {
-      return res.status(403).json({ error: 'Admin only' });
-    }
+    if (snap.data().members?.[req.user.uid]?.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
     await snap.ref.update({
       ...(name        !== undefined && { name }),
       ...(description !== undefined && { description }),
@@ -264,9 +302,7 @@ app.delete('/api/rooms/:roomId', verifyToken, async (req, res) => {
   try {
     const snap = await db.collection('rooms').doc(req.params.roomId).get();
     if (!snap.exists) return res.status(404).json({ error: 'Room not found' });
-    if (snap.data().members?.[req.user.uid]?.role !== 'admin') {
-      return res.status(403).json({ error: 'Admin only' });
-    }
+    if (snap.data().members?.[req.user.uid]?.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
     await snap.ref.delete();
     res.json({ success: true });
   } catch (err) {
@@ -274,9 +310,7 @@ app.delete('/api/rooms/:roomId', verifyToken, async (req, res) => {
   }
 });
 
-// ─────────────────────────────────────────────────
-//  MEMBER ROUTES
-// ─────────────────────────────────────────────────
+// ── MEMBERS ───────────────────────────────────────
 app.patch('/api/rooms/:roomId/members/:uid/role', verifyToken, async (req, res) => {
   try {
     const { role } = req.body;
@@ -285,12 +319,8 @@ app.patch('/api/rooms/:roomId/members/:uid/role', verifyToken, async (req, res) 
     }
     const snap = await db.collection('rooms').doc(req.params.roomId).get();
     if (!snap.exists) return res.status(404).json({ error: 'Room not found' });
-    if (snap.data().members?.[req.user.uid]?.role !== 'admin') {
-      return res.status(403).json({ error: 'Admin only' });
-    }
-    await snap.ref.update({
-      [`members.${req.params.uid}.role`]: role
-    });
+    if (snap.data().members?.[req.user.uid]?.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
+    await snap.ref.update({ [`members.${req.params.uid}.role`]: role });
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -299,15 +329,12 @@ app.patch('/api/rooms/:roomId/members/:uid/role', verifyToken, async (req, res) 
 
 app.delete('/api/rooms/:roomId/members/:uid', verifyToken, async (req, res) => {
   try {
-    const snap    = await db.collection('rooms').doc(req.params.roomId).get();
+    const snap   = await db.collection('rooms').doc(req.params.roomId).get();
     if (!snap.exists) return res.status(404).json({ error: 'Room not found' });
     const isAdmin = snap.data().members?.[req.user.uid]?.role === 'admin';
     const isSelf  = req.params.uid === req.user.uid;
     if (!isAdmin && !isSelf) return res.status(403).json({ error: 'Not allowed' });
-
-    await snap.ref.update({
-      [`members.${req.params.uid}`]: admin.firestore.FieldValue.delete()
-    });
+    await snap.ref.update({ [`members.${req.params.uid}`]: admin.firestore.FieldValue.delete() });
     await db.collection('users').doc(req.params.uid).update({
       rooms: admin.firestore.FieldValue.arrayRemove(req.params.roomId)
     });
@@ -317,9 +344,7 @@ app.delete('/api/rooms/:roomId/members/:uid', verifyToken, async (req, res) => {
   }
 });
 
-// ─────────────────────────────────────────────────
-//  MESSAGE ROUTES
-// ─────────────────────────────────────────────────
+// ── MESSAGES ──────────────────────────────────────
 app.get('/api/rooms/:roomId/messages', verifyToken, async (req, res) => {
   try {
     const lim    = parseInt(req.query.limit) || 50;
@@ -327,14 +352,10 @@ app.get('/api/rooms/:roomId/messages', verifyToken, async (req, res) => {
 
     const roomSnap = await db.collection('rooms').doc(req.params.roomId).get();
     if (!roomSnap.exists) return res.status(404).json({ error: 'Room not found' });
-    if (!roomSnap.data().members?.[req.user.uid]) {
-      return res.status(403).json({ error: 'Not a member' });
-    }
+    if (!roomSnap.data().members?.[req.user.uid]) return res.status(403).json({ error: 'Not a member' });
 
     let q = db.collection('rooms').doc(req.params.roomId)
-      .collection('messages')
-      .orderBy('createdAt', 'desc')
-      .limit(lim);
+      .collection('messages').orderBy('createdAt', 'desc').limit(lim);
 
     if (before) {
       const beforeSnap = await db.collection('rooms')
@@ -342,9 +363,8 @@ app.get('/api/rooms/:roomId/messages', verifyToken, async (req, res) => {
       if (beforeSnap.exists) q = q.startAfter(beforeSnap);
     }
 
-    const snap     = await q.get();
-    const messages = snap.docs.map(d => ({ id: d.id, ...d.data() })).reverse();
-    res.json(messages);
+    const snap = await q.get();
+    res.json(snap.docs.map(d => ({ id: d.id, ...d.data() })).reverse());
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -362,7 +382,6 @@ app.delete('/api/rooms/:roomId/messages/:msgId', verifyToken, async (req, res) =
     const isOwner  = snap.data().uid === req.user.uid;
     if (!isAdmin && !isOwner) return res.status(403).json({ error: 'Not allowed' });
 
-    // Soft delete — preserve message, mark deleted
     await msgRef.update({ deleted: true, text: '', textHtml: '' });
     res.json({ success: true });
   } catch (err) {
@@ -370,9 +389,7 @@ app.delete('/api/rooms/:roomId/messages/:msgId', verifyToken, async (req, res) =
   }
 });
 
-// ─────────────────────────────────────────────────
-//  TYPING INDICATOR
-// ─────────────────────────────────────────────────
+// ── TYPING ────────────────────────────────────────
 app.post('/api/rooms/:roomId/typing', verifyToken, async (req, res) => {
   try {
     await db.collection('rooms').doc(req.params.roomId)
@@ -396,18 +413,12 @@ app.delete('/api/rooms/:roomId/typing', verifyToken, async (req, res) => {
   }
 });
 
-// ─────────────────────────────────────────────────
-//  EDITOR ROUTES
-// ─────────────────────────────────────────────────
+// ── EDITOR STATE ──────────────────────────────────
 app.get('/api/rooms/:roomId/editor', verifyToken, async (req, res) => {
   try {
     const snap = await db.collection('rooms').doc(req.params.roomId)
       .collection('editor').doc('state').get();
-    res.json(
-      snap.exists
-        ? snap.data()
-        : { content: '', language: 'javascript', fileName: 'untitled.js' }
-    );
+    res.json(snap.exists ? snap.data() : { content: '', language: 'javascript', fileName: 'untitled.js' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -430,72 +441,34 @@ app.patch('/api/rooms/:roomId/editor', verifyToken, async (req, res) => {
   }
 });
 
-// ─────────────────────────────────────────────────
-//  FILE ROUTES  (VS Code-like file tree)
-// ─────────────────────────────────────────────────
-
-// List all committed files
+// ── FILES ─────────────────────────────────────────
 app.get('/api/rooms/:roomId/files', verifyToken, async (req, res) => {
   try {
     const roomSnap = await db.collection('rooms').doc(req.params.roomId).get();
     if (!roomSnap.exists) return res.status(404).json({ error: 'Room not found' });
-    if (!roomSnap.data().members?.[req.user.uid]) {
-      return res.status(403).json({ error: 'Not a member' });
-    }
-    const snap  = await db.collection('rooms').doc(req.params.roomId)
+    if (!roomSnap.data().members?.[req.user.uid]) return res.status(403).json({ error: 'Not a member' });
+    const snap = await db.collection('rooms').doc(req.params.roomId)
       .collection('files').orderBy('createdAt', 'asc').get();
-    const files = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    res.json(files);
+    res.json(snap.docs.map(d => ({ id: d.id, ...d.data() })));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// Create new file — goes as PR (pending admin approval)
+// Create file → PR
 app.post('/api/rooms/:roomId/files', verifyToken, async (req, res) => {
   try {
-    const { fileName, language, content } = req.body;
+    const { fileName, language, content } = req.body;  // ← fileName from body
     if (!fileName) return res.status(400).json({ error: 'fileName required' });
 
-    const ref = db.collection('rooms').doc(req.params.roomId)
-      .collection('prs').doc();
+    const trimmedName = fileName.trim();
+    const ref         = db.collection('rooms').doc(req.params.roomId).collection('prs').doc();
 
     await ref.set({
       id:        ref.id,
       type:      'create',
-      fileName:  fileName.trim(),
+      fileName:  trimmedName,
       language:  language || 'javascript',
-      content:   content  || '',
-      uid:       req.user.uid,
-      name:      req.user.name  || '',
-      photo:     req.user.picture || '',
-      status:    'pending',
-      createdAt: admin.firestore.FieldValue.serverTimestamp()
-    });
-
-    res.json({ prId: ref.id, status: 'pending' });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Edit existing file — goes as PR
-app.patch('/api/rooms/:roomId/files/:fileId', verifyToken, async (req, res) => {
-  try {
-    const { content, language } = req.body;
-    const fileSnap = await db.collection('rooms').doc(req.params.roomId)
-      .collection('files').doc(req.params.fileId).get();
-    if (!fileSnap.exists) return res.status(404).json({ error: 'File not found' });
-
-    const ref = db.collection('rooms').doc(req.params.roomId)
-      .collection('prs').doc();
-
-    await ref.set({
-      id:        ref.id,
-      type:      'edit',
-      fileId:    req.params.fileId,
-      fileName:  fileSnap.data().fileName,
-      language:  language || fileSnap.data().language || 'javascript',
       content:   content  || '',
       uid:       req.user.uid,
       name:      req.user.name    || '',
@@ -505,19 +478,70 @@ app.patch('/api/rooms/:roomId/files/:fileId', verifyToken, async (req, res) => {
     });
 
     res.json({ prId: ref.id, status: 'pending' });
+
+    // Email after response — non-blocking
+    notifyAdmins({
+      roomId:        req.params.roomId,
+      submitterName: req.user.name || 'Someone',
+      fileName:      trimmedName,           // ← always defined
+      type:          'create',
+      prId:          ref.id
+    }).catch(err => console.error('PR email failed:', err.message));
+
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// Delete file — admin only, direct (no PR needed)
+// Edit file → PR
+app.patch('/api/rooms/:roomId/files/:fileId', verifyToken, async (req, res) => {
+  try {
+    const { content, language } = req.body;
+
+    const fileSnap = await db.collection('rooms').doc(req.params.roomId)
+      .collection('files').doc(req.params.fileId).get();
+    if (!fileSnap.exists) return res.status(404).json({ error: 'File not found' });
+
+    const fileName = fileSnap.data().fileName;         // ← pulled from Firestore first
+    const fileLang = language || fileSnap.data().language || 'javascript';
+
+    const ref = db.collection('rooms').doc(req.params.roomId).collection('prs').doc();
+
+    await ref.set({
+      id:        ref.id,
+      type:      'edit',
+      fileId:    req.params.fileId,
+      fileName,                                         // ← always defined
+      language:  fileLang,
+      content:   content || '',
+      uid:       req.user.uid,
+      name:      req.user.name    || '',
+      photo:     req.user.picture || '',
+      status:    'pending',
+      createdAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+
+    res.json({ prId: ref.id, status: 'pending' });
+
+    notifyAdmins({
+      roomId:        req.params.roomId,
+      submitterName: req.user.name || 'Someone',
+      fileName,                                         // ← from fileSnap
+      type:          'edit',
+      prId:          ref.id
+    }).catch(err => console.error('PR email failed:', err.message));
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Delete file — admin only
 app.delete('/api/rooms/:roomId/files/:fileId', verifyToken, async (req, res) => {
   try {
     const roomSnap = await db.collection('rooms').doc(req.params.roomId).get();
     if (!roomSnap.exists) return res.status(404).json({ error: 'Room not found' });
-    if (roomSnap.data().members?.[req.user.uid]?.role !== 'admin') {
-      return res.status(403).json({ error: 'Admin only' });
-    }
+    if (roomSnap.data().members?.[req.user.uid]?.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
     await db.collection('rooms').doc(req.params.roomId)
       .collection('files').doc(req.params.fileId).delete();
     res.json({ success: true });
@@ -526,18 +550,12 @@ app.delete('/api/rooms/:roomId/files/:fileId', verifyToken, async (req, res) => 
   }
 });
 
-// ─────────────────────────────────────────────────
-//  PULL REQUEST ROUTES
-// ─────────────────────────────────────────────────
-
-// List all PRs for a room
+// ── PULL REQUESTS ─────────────────────────────────
 app.get('/api/rooms/:roomId/prs', verifyToken, async (req, res) => {
   try {
     const roomSnap = await db.collection('rooms').doc(req.params.roomId).get();
     if (!roomSnap.exists) return res.status(404).json({ error: 'Room not found' });
-    if (!roomSnap.data().members?.[req.user.uid]) {
-      return res.status(403).json({ error: 'Not a member' });
-    }
+    if (!roomSnap.data().members?.[req.user.uid]) return res.status(403).json({ error: 'Not a member' });
     const snap = await db.collection('rooms').doc(req.params.roomId)
       .collection('prs').orderBy('createdAt', 'desc').limit(50).get();
     res.json(snap.docs.map(d => ({ id: d.id, ...d.data() })));
@@ -546,27 +564,23 @@ app.get('/api/rooms/:roomId/prs', verifyToken, async (req, res) => {
   }
 });
 
-// Admin: approve or reject PR
 app.post('/api/rooms/:roomId/prs/:prId/review', verifyToken, async (req, res) => {
   try {
-    const { action } = req.body; // 'approve' | 'reject'
+    const { action } = req.body;
     if (!['approve', 'reject'].includes(action)) {
       return res.status(400).json({ error: 'action must be approve or reject' });
     }
 
     const roomSnap = await db.collection('rooms').doc(req.params.roomId).get();
     if (!roomSnap.exists) return res.status(404).json({ error: 'Room not found' });
-    if (roomSnap.data().members?.[req.user.uid]?.role !== 'admin') {
-      return res.status(403).json({ error: 'Admin only' });
-    }
+    if (roomSnap.data().members?.[req.user.uid]?.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
 
-    const prRef  = db.collection('rooms').doc(req.params.roomId)
-      .collection('prs').doc(req.params.prId);
+    const prRef  = db.collection('rooms').doc(req.params.roomId).collection('prs').doc(req.params.prId);
     const prSnap = await prRef.get();
     if (!prSnap.exists) return res.status(404).json({ error: 'PR not found' });
 
-    const pr         = prSnap.data();
-    const newStatus  = action === 'approve' ? 'approved' : 'rejected';
+    const pr        = prSnap.data();
+    const newStatus = action === 'approve' ? 'approved' : 'rejected';
 
     await prRef.update({
       status:     newStatus,
@@ -574,10 +588,8 @@ app.post('/api/rooms/:roomId/prs/:prId/review', verifyToken, async (req, res) =>
       reviewedAt: admin.firestore.FieldValue.serverTimestamp()
     });
 
-    // If approved — commit changes to files collection
     if (action === 'approve') {
       const filesRef = db.collection('rooms').doc(req.params.roomId).collection('files');
-
       if (pr.type === 'create') {
         await filesRef.doc().set({
           fileName:  pr.fileName,
@@ -602,14 +614,11 @@ app.post('/api/rooms/:roomId/prs/:prId/review', verifyToken, async (req, res) =>
   }
 });
 
-// ─────────────────────────────────────────────────
-//  INVITE ROUTES
-// ─────────────────────────────────────────────────
+// ── INVITES ───────────────────────────────────────
 app.get('/api/invite/:code', optionalAuth, async (req, res) => {
   try {
     const snap = await db.collection('rooms')
-      .where('inviteCode', '==', req.params.code.toUpperCase())
-      .limit(1).get();
+      .where('inviteCode', '==', req.params.code.toUpperCase()).limit(1).get();
     if (snap.empty) return res.status(404).json({ error: 'Invalid invite code' });
     const room = snap.docs[0].data();
     res.json({
@@ -628,9 +637,7 @@ app.post('/api/invite/:roomId/regenerate', verifyToken, async (req, res) => {
   try {
     const snap = await db.collection('rooms').doc(req.params.roomId).get();
     if (!snap.exists) return res.status(404).json({ error: 'Room not found' });
-    if (snap.data().members?.[req.user.uid]?.role !== 'admin') {
-      return res.status(403).json({ error: 'Admin only' });
-    }
+    if (snap.data().members?.[req.user.uid]?.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
     const newCode = genInviteCode();
     await snap.ref.update({ inviteCode: newCode });
     res.json({ inviteCode: newCode });
@@ -639,11 +646,7 @@ app.post('/api/invite/:roomId/regenerate', verifyToken, async (req, res) => {
   }
 });
 
-// ─────────────────────────────────────────────────
-//  AI ROUTES
-// ─────────────────────────────────────────────────
-
-// @ai in group chat — non-stream, reply saved to Firestore by client
+// ── AI ────────────────────────────────────────────
 app.post('/api/ai/chat', verifyToken, async (req, res) => {
   try {
     const { prompt, context } = req.body;
@@ -662,25 +665,22 @@ app.post('/api/ai/chat', verifyToken, async (req, res) => {
     const html = marked.parse(raw);
     res.json({ reply: raw, replyHtml: html });
   } catch (err) {
-    console.error('AI chat error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
-// Personal AI — SSE streaming
 app.post('/api/ai/private/stream', verifyToken, async (req, res) => {
   const { prompt, history } = req.body;
   if (!prompt) return res.status(400).json({ error: 'Prompt required' });
 
-  res.setHeader('Content-Type',      'text/event-stream');
-  res.setHeader('Cache-Control',     'no-cache');
-  res.setHeader('Connection',        'keep-alive');
+  res.setHeader('Content-Type',    'text/event-stream');
+  res.setHeader('Cache-Control',   'no-cache');
+  res.setHeader('Connection',      'keep-alive');
   res.setHeader('X-Accel-Buffering', 'no');
   res.flushHeaders();
 
   try {
     const contents = [];
-
     if (Array.isArray(history)) {
       history.slice(-10).forEach(msg => {
         contents.push({
@@ -702,7 +702,6 @@ app.post('/api/ai/private/stream', verifyToken, async (req, res) => {
     });
 
     let fullText = '';
-
     for await (const chunk of stream) {
       const text = chunk.text;
       if (text) {
@@ -711,19 +710,14 @@ app.post('/api/ai/private/stream', verifyToken, async (req, res) => {
       }
     }
 
-    // Send final event with full parsed HTML
-    const html = marked.parse(fullText);
-    res.write(`data: ${JSON.stringify({ done: true, full: fullText, html })}\n\n`);
+    res.write(`data: ${JSON.stringify({ done: true, full: fullText, html: marked.parse(fullText) })}\n\n`);
     res.end();
-
   } catch (err) {
-    console.error('AI stream error:', err.message);
     res.write(`data: ${JSON.stringify({ error: err.message })}\n\n`);
     res.end();
   }
 });
 
-// Personal AI — non-stream fallback
 app.post('/api/ai/private', verifyToken, async (req, res) => {
   try {
     const { prompt, history } = req.body;
@@ -743,23 +737,17 @@ app.post('/api/ai/private', verifyToken, async (req, res) => {
     const response = await genai.models.generateContent({
       model:    'gemini-2.5-flash',
       contents,
-      config: {
-        systemInstruction: 'You are an expert coding assistant.',
-        temperature:       0.8,
-        maxOutputTokens:   4096
-      }
+      config: { systemInstruction: 'You are an expert coding assistant.', temperature: 0.8, maxOutputTokens: 4096 }
     });
 
     const raw  = response.text;
     const html = marked.parse(raw);
     res.json({ reply: raw, replyHtml: html });
   } catch (err) {
-    console.error('AI private error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
-// Code snippet verdict — short review
 app.post('/api/ai/snippet-verdict', verifyToken, async (req, res) => {
   try {
     const { code, language } = req.body;
@@ -777,29 +765,23 @@ app.post('/api/ai/snippet-verdict', verifyToken, async (req, res) => {
     const html = marked.parse(raw);
     res.json({ verdict: raw, verdictHtml: html });
   } catch (err) {
-    console.error('AI verdict error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
-// ─────────────────────────────────────────────────
-//  FILE UPLOAD ROUTES  (Firebase Storage signed URL)
-// ─────────────────────────────────────────────────
+// ── FILE UPLOAD (Storage) ─────────────────────────
 app.post('/api/rooms/:roomId/upload', verifyToken, async (req, res) => {
   try {
     const { fileName, contentType } = req.body;
-    if (!fileName || !contentType) {
-      return res.status(400).json({ error: 'fileName and contentType required' });
-    }
-    const filePath = `rooms/${req.params.roomId}/${Date.now()}_${fileName}`;
-    const file     = bucket.file(filePath);
+    if (!fileName || !contentType) return res.status(400).json({ error: 'fileName and contentType required' });
+    const filePath    = `rooms/${req.params.roomId}/${Date.now()}_${fileName}`;
+    const file        = bucket.file(filePath);
     const [signedUrl] = await file.getSignedUrl({
-      action:      'write',
-      expires:     Date.now() + 15 * 60 * 1000,
+      action:  'write',
+      expires: Date.now() + 15 * 60 * 1000,
       contentType
     });
-    const publicUrl = `https://storage.googleapis.com/${bucket.name}/${filePath}`;
-    res.json({ uploadUrl: signedUrl, publicUrl, filePath });
+    res.json({ uploadUrl: signedUrl, publicUrl: `https://storage.googleapis.com/${bucket.name}/${filePath}`, filePath });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -816,34 +798,20 @@ app.delete('/api/rooms/:roomId/files-storage', verifyToken, async (req, res) => 
   }
 });
 
-// ─────────────────────────────────────────────────
-//  DEBUG  (remove before production)
-// ─────────────────────────────────────────────────
+// ── DEBUG ─────────────────────────────────────────
 app.get('/api/debug', async (req, res) => {
   try {
     await db.collection('_test').doc('ping').set({ ts: Date.now() });
-    res.json({
-      status:    'OK',
-      firestore: true,
-      gemini:    !!process.env.GEMINI_API_KEY,
-      node:      process.version
-    });
+    res.json({ status: 'OK', firestore: true, gemini: !!process.env.GEMINI_API_KEY, node: process.version });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// ─────────────────────────────────────────────────
-//  SPA FALLBACK
-// ─────────────────────────────────────────────────
+// ── SPA FALLBACK ──────────────────────────────────
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, './public/index.html'));
 });
 
-// ─────────────────────────────────────────────────
-//  START
-// ─────────────────────────────────────────────────
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`\n  StackRoom → http://localhost:${PORT}\n`);
-});
+const PORT = process.env.PORT || 6969;
+app.listen(PORT, () => console.log(`\n  StackRoom → http://localhost:${PORT}\n`));

@@ -1721,22 +1721,14 @@
 
                             <div style="flex:1;"></div>
 
-                            <!-- Coming soon -->
-                            <div class="flex items-center gap-1" style="color:var(--muted);font-size:11px;">
-                                <i class="fa-solid fa-users"></i>
-                                <span>Live sync</span>
-                                <span class="coming-soon">Soon</span>
-                            </div>
+                            <button id="pr-btn" onclick="window.submitPR()" class="icon-btn"
+                                title="Submit Pull Request (Ctrl+S)" style="padding: 0 3px 0 3px; width: 50px;">
+                                <i class="fa-solid fa-floppy-disk"></i>
+                                <span style="font-size:11px;margin-left:4px;">Save</span>
+                            </button>
 
                             <button class="icon-btn" onclick="window.copyEditorCode()" title="Copy code">
                                 <i class="fa-regular fa-copy"></i>
-                            </button>
-                            <button class="icon-btn" onclick="window.saveEditorCode()" title="Save to room"
-                                id="save-btn">
-                                <i class="fa-solid fa-floppy-disk"></i>
-                            </button>
-                            <button class="icon-btn" onclick="window.submitPR()" title="Submit as Pull Request">
-                                <i class="fa-solid fa-code-pull-request"></i>
                             </button>
                         </div>
 
@@ -1832,13 +1824,13 @@
             query, orderBy, limit, serverTimestamp, getDoc
         } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
-        // ── Init ──
+        // ── Init ──────────────────────────────────────
         const firebaseConfig = await fetch('/api/config').then(r => r.json());
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
 
-        // ── State ──
+        // ── State ─────────────────────────────────────
         let currentUser = null;
         let currentRoom = null;
         let roomId = null;
@@ -1849,8 +1841,11 @@
         let mentionList = [];
         let aiHistory = [];
         let editorInstance = null;
+        let editorDirty = false;
         let unsubMessages = null;
         let unsubTyping = null;
+        let unsubFiles = null;
+        let unsubPRs = null;
         let ctxTarget = null;
         let kickTarget = null;
         let roleTarget = null;
@@ -1859,9 +1854,9 @@
         let activeFileId = null;
         let typingTimer = null;
 
-        // ─────────────────────────────────────
+        // ─────────────────────────────────────────────
         //  HELPERS
-        // ─────────────────────────────────────
+        // ─────────────────────────────────────────────
         function esc(str) {
             return String(str || '')
                 .replace(/&/g, '&amp;').replace(/</g, '&lt;')
@@ -1887,89 +1882,84 @@
         }
 
         function setLoaderMsg(m) {
-            document.getElementById('loader-msg').textContent = m;
+            const el = document.getElementById('loader-msg');
+            if (el) el.textContent = m;
         }
 
-        // ─────────────────────────────────────
+        // ─────────────────────────────────────────────
         //  TOAST
-        // ─────────────────────────────────────
+        // ─────────────────────────────────────────────
         function showToast(msg, type = 'info') {
             const t = document.getElementById('toast');
             const tm = document.getElementById('toast-msg');
             const ti = document.getElementById('toast-icon');
             tm.textContent = msg;
             ti.className =
-                type === 'error' ? 'fa-solid fa-circle-xmark text-red-400' :
-                    type === 'success' ? 'fa-solid fa-circle-check text-green-400' :
-                        'fa-solid fa-circle-info text-indigo-400';
+                type === 'error' ? 'fa-solid fa-circle-xmark  text-red-400' :
+                    type === 'success' ? 'fa-solid fa-circle-check  text-green-400' :
+                        'fa-solid fa-circle-info   text-indigo-400';
             t.className = `show ${type}`;
             setTimeout(() => { t.className = ''; }, 3500);
         }
         window.showToast = showToast;
 
-        // ─────────────────────────────────────
+        // ─────────────────────────────────────────────
         //  PARSE MESSAGE TEXT
-        //  auto-detects code blocks, inline code,
-        //  @mentions, bold, italic
-        // ─────────────────────────────────────
+        // ─────────────────────────────────────────────
         function parseMessageText(text) {
-  if (!text) return '';
+            if (!text) return '';
 
-  // ── Step 1: pull out code blocks BEFORE escaping ──
-  const codeBlocks = [];
-  text = text.replace(/```(\w+)?\n?([\s\S]*?)```/g, (_, lang, code) => {
-    const safeLang = lang || 'plaintext';
-    const idx      = codeBlocks.length;
-    codeBlocks.push(`
-      <div class="code-snippet">
-        <div class="code-snippet-header">
-          <span><i class="fa-solid fa-code mr-1"></i>${safeLang}</span>
-          <button onclick="navigator.clipboard.writeText(this.closest('.code-snippet').querySelector('pre code').textContent);window.showToast('Copied!','success')"
-            class="icon-btn" style="height:20px;padding:0 8px;font-size:10px;">
-            <i class="fa-regular fa-copy mr-1"></i>Copy
-          </button>
-        </div>
-        <pre><code class="language-${safeLang}">${
-          code.trim()
-            .replace(/&/g,'&amp;')
-            .replace(/</g,'&lt;')
-            .replace(/>/g,'&gt;')
-        }</code></pre>
-      </div>`);
-    return `%%CODEBLOCK_${idx}%%`; // placeholder
-  });
+            // Step 1 — extract code blocks before escaping
+            const codeBlocks = [];
+            text = text.replace(/```(\w+)?\n?([\s\S]*?)```/g, (_, lang, code) => {
+                const safeLang = lang || 'plaintext';
+                const idx = codeBlocks.length;
+                codeBlocks.push(`
+        <div class="code-snippet">
+          <div class="code-snippet-header">
+            <span><i class="fa-solid fa-code mr-1"></i>${safeLang}</span>
+            <button onclick="navigator.clipboard.writeText(this.closest('.code-snippet').querySelector('pre code').textContent);window.showToast('Copied!','success')"
+              class="icon-btn" style="height:20px;padding:0 8px;font-size:10px;">
+              <i class="fa-regular fa-copy mr-1"></i>Copy
+            </button>
+          </div>
+          <pre><code class="language-${safeLang}">${code.trim()
+                        .replace(/&/g, '&amp;')
+                        .replace(/</g, '&lt;')
+                        .replace(/>/g, '&gt;')
+                    }</code></pre>
+        </div>`);
+                return `%%CODEBLOCK_${idx}%%`;
+            });
 
-  // ── Step 2: escape the REST of the text (user's plain text) ──
-  text = text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+            // Step 2 — escape the rest
+            text = text
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
-  // ── Step 3: inline code ──
-  text = text.replace(/`([^`]+)`/g, '<code>$1</code>');
+            // Step 3 — inline code
+            text = text.replace(/`([^`]+)`/g, '<code>$1</code>');
 
-  // ── Step 4: @mentions ──
-  text = text.replace(/@ai\b/g,    '<span class="mention-ai">@ai</span>');
-  text = text.replace(/@([\w]+)/g, '<span class="mention-user">@$1</span>');
+            // Step 4 — @mentions
+            text = text.replace(/@ai\b/g, '<span class="mention-ai">@ai</span>');
+            text = text.replace(/@([\w]+)/g, '<span class="mention-user">@$1</span>');
 
-  // ── Step 5: bold / italic ──
-  text = text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-  text = text.replace(/\*(.+?)\*/g,     '<em>$1</em>');
+            // Step 5 — bold / italic
+            text = text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+            text = text.replace(/\*(.+?)\*/g, '<em>$1</em>');
 
-  // ── Step 6: line breaks ──
-  text = text.replace(/\n/g, '<br>');
+            // Step 6 — line breaks
+            text = text.replace(/\n/g, '<br>');
 
-  // ── Step 7: put code blocks back ──
-  text = text.replace(/%%CODEBLOCK_(\d+)%%/g, (_, i) => codeBlocks[i]);
+            // Step 7 — restore code blocks
+            text = text.replace(/%%CODEBLOCK_(\d+)%%/g, (_, i) => codeBlocks[i]);
 
-  return text;
-}
+            return text;
+        }
 
-
-        // ─────────────────────────────────────
+        // ─────────────────────────────────────────────
         //  PANEL MANAGEMENT
-        // ─────────────────────────────────────
+        // ─────────────────────────────────────────────
         const panelState = { chat: true, code: false, ai: false };
 
         window.togglePanel = (name) => {
@@ -2001,38 +1991,34 @@
                 }
             });
 
-            // Resize handles
             const hcc = document.getElementById('handle-chat-code');
             const hca = document.getElementById('handle-code-ai');
             if (hcc) hcc.style.display = panelState.chat && panelState.code ? 'block' : 'none';
             if (hca) hca.style.display = panelState.code && panelState.ai ? 'block' : 'none';
 
-            // PR button
             const prBtn = document.getElementById('pr-btn');
             if (prBtn) prBtn.style.display = panelState.code ? 'flex' : 'none';
 
-            // Refresh CodeMirror
             if (panelState.code && editorInstance) {
                 setTimeout(() => editorInstance.refresh(), 50);
             }
 
-            // Focus first active tab
             const first = ['chat', 'code', 'ai'].find(p => panelState[p]);
             if (first) window.focusPanel(first);
         }
 
-        // ─────────────────────────────────────
+        // ─────────────────────────────────────────────
         //  SIDEBAR
-        // ─────────────────────────────────────
+        // ─────────────────────────────────────────────
         let sidebarOpen = true;
         window.toggleSidebar = () => {
             sidebarOpen = !sidebarOpen;
             document.getElementById('sidebar').classList.toggle('collapsed', !sidebarOpen);
         };
 
-        // ─────────────────────────────────────
+        // ─────────────────────────────────────────────
         //  RESIZE PANELS
-        // ─────────────────────────────────────
+        // ─────────────────────────────────────────────
         window.startResize = (e, handleId) => {
             e.preventDefault();
             const handle = document.getElementById(handleId);
@@ -2061,9 +2047,9 @@
             document.addEventListener('mouseup', onUp);
         };
 
-        // ─────────────────────────────────────
+        // ─────────────────────────────────────────────
         //  MEMBERS
-        // ─────────────────────────────────────
+        // ─────────────────────────────────────────────
         function renderMembers() {
             const list = document.getElementById('members-list');
             const keys = Object.keys(members);
@@ -2096,9 +2082,9 @@
             }).join('');
         }
 
-        // ─────────────────────────────────────
+        // ─────────────────────────────────────────────
         //  CONTEXT MENU
-        // ─────────────────────────────────────
+        // ─────────────────────────────────────────────
         window.openCtxMenu = (e, uid) => {
             e.preventDefault(); e.stopPropagation();
             ctxTarget = uid;
@@ -2138,15 +2124,12 @@
             try {
                 const token = await getToken();
                 const res = await fetch(`/api/rooms/${roomId}/members/${kickTarget}`, {
-                    method: 'DELETE',
-                    headers: { 'Authorization': `Bearer ${token}` }
+                    method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` }
                 });
                 if (!res.ok) throw new Error((await res.json()).error);
                 showToast('Member removed.', 'success');
                 closeModal('kick-modal');
-            } catch (err) {
-                showToast(err.message, 'error');
-            }
+            } catch (err) { showToast(err.message, 'error'); }
         };
 
         window.ctxChangeRole = () => {
@@ -2167,20 +2150,14 @@
                 if (!res.ok) throw new Error((await res.json()).error);
                 showToast(`Role updated to ${role}.`, 'success');
                 closeModal('role-modal');
-            } catch (err) {
-                showToast(err.message, 'error');
-            }
+            } catch (err) { showToast(err.message, 'error'); }
         };
 
-        // ─────────────────────────────────────
+        // ─────────────────────────────────────────────
         //  MODALS
-        // ─────────────────────────────────────
-        function openModal(id) {
-            document.getElementById(id).classList.add('open');
-        }
-        function closeModal(id) {
-            document.getElementById(id).classList.remove('open');
-        }
+        // ─────────────────────────────────────────────
+        function openModal(id) { document.getElementById(id).classList.add('open'); }
+        function closeModal(id) { document.getElementById(id).classList.remove('open'); }
         window.closeModal = closeModal;
 
         window.openInviteModal = () => {
@@ -2189,39 +2166,27 @@
                 `${location.origin}/lobby/?join=${currentRoom?.inviteCode}`;
             openModal('invite-modal');
         };
-        window.copyInvCode = () => {
-            navigator.clipboard.writeText(currentRoom?.inviteCode || '');
-            showToast('Code copied!', 'success');
-        };
-        window.copyInvLink = () => {
-            navigator.clipboard.writeText(`${location.origin}/lobby/?join=${currentRoom?.inviteCode}`);
-            showToast('Link copied!', 'success');
-        };
-        window.copyCode = () => {
-            navigator.clipboard.writeText(currentRoom?.inviteCode || '');
-            showToast('Invite code copied!', 'success');
-        };
+        window.copyInvCode = () => { navigator.clipboard.writeText(currentRoom?.inviteCode || ''); showToast('Code copied!', 'success'); };
+        window.copyInvLink = () => { navigator.clipboard.writeText(`${location.origin}/lobby/?join=${currentRoom?.inviteCode}`); showToast('Link copied!', 'success'); };
+        window.copyCode = () => { navigator.clipboard.writeText(currentRoom?.inviteCode || ''); showToast('Invite code copied!', 'success'); };
 
         window.regenInvite = async () => {
             try {
                 const token = await getToken();
                 const res = await fetch(`/api/invite/${roomId}/regenerate`, {
-                    method: 'POST',
-                    headers: { 'Authorization': `Bearer ${token}` }
+                    method: 'POST', headers: { 'Authorization': `Bearer ${token}` }
                 });
                 const data = await res.json();
                 if (!res.ok) throw new Error(data.error);
                 currentRoom.inviteCode = data.inviteCode;
                 document.getElementById('sidebar-code').textContent = data.inviteCode;
                 showToast('New code: ' + data.inviteCode, 'success');
-            } catch (err) {
-                showToast(err.message, 'error');
-            }
+            } catch (err) { showToast(err.message, 'error'); }
         };
 
-        // ─────────────────────────────────────
+        // ─────────────────────────────────────────────
         //  BUILD MESSAGE HTML
-        // ─────────────────────────────────────
+        // ─────────────────────────────────────────────
         function buildMsgHTML(msg) {
             const m = members[msg.uid] || {};
             const isMe = msg.uid === currentUser?.uid;
@@ -2231,18 +2196,15 @@
             const initials = getInitials(m.displayName || msg.displayName || '?');
             const photo = m.photoURL || msg.photoURL || '';
 
-            // Text — use replyHtml if AI, else parse manually
             let textContent = '';
             if (msg.deleted) {
                 textContent = '<em style="color:var(--muted2);">Message deleted</em>';
             } else if (msg.isAI && msg.textHtml) {
-                // Server already parsed markdown → HTML
                 textContent = msg.textHtml;
             } else {
                 textContent = parseMessageText(msg.text || '');
             }
 
-            // Reply quote
             let replyHTML = '';
             if (msg.replyTo) {
                 const rm = members[msg.replyTo.uid] || {};
@@ -2266,9 +2228,7 @@
           ${replyHTML}
           <div class="msg-meta">
             <span class="msg-name ${msg.isAI ? 'ai' : ''}">
-              ${msg.isAI
-                    ? '<i class="fa-solid fa-wand-magic-sparkles mr-1" style="font-size:9px;"></i>'
-                    : ''}
+              ${msg.isAI ? '<i class="fa-solid fa-wand-magic-sparkles mr-1" style="font-size:9px;"></i>' : ''}
               ${esc(m.displayName || msg.displayName || 'Unknown')}
             </span>
             <span class="msg-time">${formatTime(msg.createdAt)}</span>
@@ -2303,17 +2263,15 @@
             el.querySelectorAll('pre code').forEach(b => hljs.highlightElement(b));
         }
 
-
         function updateMessageEl(id, data) {
             const el = document.getElementById(`msg-${id}`);
             if (!el) return;
             const tmp = document.createElement('div');
             tmp.innerHTML = buildMsgHTML({ id, ...data });
             const newEl = tmp.firstElementChild;
-            el.replaceWith(newEl); // ← in DOM first
+            el.replaceWith(newEl);
             newEl.querySelectorAll('pre code').forEach(b => hljs.highlightElement(b));
         }
-
 
         function scrollToBottom() {
             const el = document.getElementById('messages');
@@ -2321,9 +2279,9 @@
             if (atBottom) el.scrollTop = el.scrollHeight;
         }
 
-        // ─────────────────────────────────────
-        //  SUBSCRIBE MESSAGES  (Firestore realtime)
-        // ─────────────────────────────────────
+        // ─────────────────────────────────────────────
+        //  SUBSCRIBE MESSAGES
+        // ─────────────────────────────────────────────
         function subscribeMessages() {
             const q = query(
                 collection(db, 'rooms', roomId, 'messages'),
@@ -2340,15 +2298,93 @@
             });
         }
 
-        // ─────────────────────────────────────
+        // ─────────────────────────────────────────────
+        //  SUBSCRIBE FILES  (realtime — no refresh needed)
+        // ─────────────────────────────────────────────
+        function subscribeFiles() {
+            const q = query(
+                collection(db, 'rooms', roomId, 'files'),
+                orderBy('createdAt', 'asc')
+            );
+            unsubFiles = onSnapshot(q, (snap) => {
+                files = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+                renderFileList();
+
+                // If active file was updated by an approved PR and editor is clean — sync it
+                if (activeFileId && !editorDirty) {
+                    const updated = files.find(f => f.id === activeFileId);
+                    if (updated && editorInstance) {
+                        const current = editorInstance.getValue();
+                        if (updated.content !== current) {
+                            editorInstance.setValue(updated.content || '');
+                            showToast('File updated by approved PR.', 'info');
+                        }
+                    }
+                }
+            });
+        }
+
+        // ─────────────────────────────────────────────
+        //  SUBSCRIBE PRs  (realtime — no refresh needed)
+        // ─────────────────────────────────────────────
+        function subscribePRs() {
+            const q = query(
+                collection(db, 'rooms', roomId, 'prs'),
+                orderBy('createdAt', 'desc'),
+                limit(50)
+            );
+            unsubPRs = onSnapshot(q, (snap) => {
+                prList = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+                renderPRs();
+            });
+        }
+
+        // ─────────────────────────────────────────────
+        //  SUBSCRIBE TYPING
+        // ─────────────────────────────────────────────
+        function subscribeTyping() {
+            unsubTyping = onSnapshot(
+                collection(db, 'rooms', roomId, 'typing'),
+                (snap) => {
+                    const typists = snap.docs
+                        .filter(d => d.id !== currentUser.uid)
+                        .map(d => d.data().name);
+                    renderTypingIndicator(typists);
+                }
+            );
+        }
+
+        function renderTypingIndicator(typists) {
+            let el = document.getElementById('typing-indicator');
+            if (!el) {
+                el = document.createElement('div');
+                el.id = 'typing-indicator';
+                el.style.cssText =
+                    'padding:2px 16px 6px;font-size:11px;color:var(--muted);min-height:22px;transition:opacity 0.2s ease;';
+                const inputArea = document.getElementById('chat-input-area');
+                inputArea.parentElement.insertBefore(el, inputArea);
+            }
+            if (!typists.length) { el.style.opacity = '0'; el.textContent = ''; return; }
+            el.style.opacity = '1';
+            const names = typists.slice(0, 3).join(', ');
+            el.innerHTML = `
+      <span style="color:var(--indigo2);">${esc(names)}</span>
+      ${typists.length === 1 ? 'is' : 'are'} typing
+      <span style="display:inline-flex;gap:2px;margin-left:2px;vertical-align:middle;">
+        <span style="animation:bounce 1.2s infinite 0s;  display:inline-block;font-size:16px;line-height:0.8;">·</span>
+        <span style="animation:bounce 1.2s infinite 0.2s;display:inline-block;font-size:16px;line-height:0.8;">·</span>
+        <span style="animation:bounce 1.2s infinite 0.4s;display:inline-block;font-size:16px;line-height:0.8;">·</span>
+      </span>`;
+        }
+
+        // ─────────────────────────────────────────────
         //  SEND MESSAGE
-        // ─────────────────────────────────────
+        // ─────────────────────────────────────────────
         window.sendMessage = async () => {
             const inp = document.getElementById('chat-input');
             const text = inp.value.trim();
             if (!text) return;
 
-            // Clear typing
             clearTimeout(typingTimer);
             const token = await getToken();
             fetch(`/api/rooms/${roomId}/typing`, {
@@ -2376,7 +2412,6 @@
                     msgData
                 );
 
-                // If @ai mentioned — fetch AI reply and post as message
                 if (text.toLowerCase().includes('@ai')) {
                     handleAIMention(ref.id, text);
                 }
@@ -2387,7 +2422,6 @@
             }
         };
 
-        // @ai in group chat
         async function handleAIMention(triggerMsgId, text) {
             try {
                 const prompt = text.replace(/@ai\b/gi, '').trim();
@@ -2405,7 +2439,7 @@
                     displayName: 'AI Assistant',
                     photoURL: '',
                     text: data.reply,
-                    textHtml: data.replyHtml,   // ← server-parsed markdown HTML
+                    textHtml: data.replyHtml,
                     isAI: true,
                     createdAt: serverTimestamp(),
                     deleted: false,
@@ -2423,9 +2457,9 @@
             }
         }
 
-        // ─────────────────────────────────────
+        // ─────────────────────────────────────────────
         //  REPLY / EDIT / DELETE
-        // ─────────────────────────────────────
+        // ─────────────────────────────────────────────
         window.replyMsg = (id) => {
             const txt = document.getElementById(`msg-text-${id}`)?.textContent || '';
             const name = document.querySelector(`#msg-${id} .msg-name`)?.textContent?.trim() || '';
@@ -2466,9 +2500,7 @@
                 await updateDoc(doc(db, 'rooms', roomId, 'messages', id), {
                     text: txt, edited: true
                 });
-            } catch (err) {
-                showToast('Edit failed: ' + err.message, 'error');
-            }
+            } catch (err) { showToast('Edit failed: ' + err.message, 'error'); }
         };
 
         window.cancelEdit = (id) => {
@@ -2481,24 +2513,20 @@
             try {
                 const token = await getToken();
                 const res = await fetch(`/api/rooms/${roomId}/messages/${id}`, {
-                    method: 'DELETE',
-                    headers: { 'Authorization': `Bearer ${token}` }
+                    method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` }
                 });
                 if (!res.ok) throw new Error((await res.json()).error);
-            } catch (err) {
-                showToast(err.message, 'error');
-            }
+            } catch (err) { showToast(err.message, 'error'); }
         };
 
-        // ─────────────────────────────────────
-        //  CHAT INPUT  (auto-resize + mention)
-        // ─────────────────────────────────────
+        // ─────────────────────────────────────────────
+        //  CHAT INPUT
+        // ─────────────────────────────────────────────
         window.onChatInput = (e) => {
             const inp = e.target;
             inp.style.height = 'auto';
             inp.style.height = Math.min(inp.scrollHeight, 120) + 'px';
 
-            // Typing indicator
             getToken().then(token => {
                 fetch(`/api/rooms/${roomId}/typing`, {
                     method: 'POST', headers: { 'Authorization': `Bearer ${token}` }
@@ -2511,16 +2539,12 @@
                 }, 3000);
             });
 
-            // Mention trigger
             const val = inp.value;
             const pos = inp.selectionStart;
             const before = val.slice(0, pos);
             const match = before.match(/@(\w*)$/);
-            if (match) {
-                showMentionDropdown(match[1].toLowerCase());
-            } else {
-                hideMentionDropdown();
-            }
+            if (match) showMentionDropdown(match[1].toLowerCase());
+            else hideMentionDropdown();
         };
 
         window.onChatKeydown = (e) => {
@@ -2531,22 +2555,15 @@
                 if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); selectMention(mentionIndex); return; }
                 if (e.key === 'Escape') { hideMentionDropdown(); return; }
             }
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                window.sendMessage();
-            }
+            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); window.sendMessage(); }
         };
 
-        function showMentionDropdown(query) {
+        function showMentionDropdown(q) {
             const allItems = [
                 { name: 'ai', label: 'AI Assistant', isAI: true },
-                ...Object.values(members).map(m => ({
-                    name: m.displayName,
-                    label: m.displayName,
-                    photo: m.photoURL
-                }))
+                ...Object.values(members).map(m => ({ name: m.displayName, label: m.displayName, photo: m.photoURL }))
             ];
-            mentionList = allItems.filter(i => i.name?.toLowerCase().includes(query));
+            mentionList = allItems.filter(i => i.name?.toLowerCase().includes(q));
             if (!mentionList.length) { hideMentionDropdown(); return; }
             mentionIndex = 0;
             renderMentionItems();
@@ -2601,47 +2618,9 @@
             inp.selectionStart = inp.selectionEnd = pos + 7;
         };
 
-        // ─────────────────────────────────────
-        //  TYPING INDICATOR  (Firestore realtime)
-        // ─────────────────────────────────────
-        function subscribeTyping() {
-            unsubTyping = onSnapshot(
-                collection(db, 'rooms', roomId, 'typing'),
-                (snap) => {
-                    const typists = snap.docs
-                        .filter(d => d.id !== currentUser.uid)
-                        .map(d => d.data().name);
-                    renderTypingIndicator(typists);
-                }
-            );
-        }
-
-        function renderTypingIndicator(typists) {
-            let el = document.getElementById('typing-indicator');
-            if (!el) {
-                el = document.createElement('div');
-                el.id = 'typing-indicator';
-                el.style.cssText =
-                    'padding:2px 16px 6px;font-size:11px;color:var(--muted);min-height:22px;transition:opacity 0.2s ease;';
-                const inputArea = document.getElementById('chat-input-area');
-                inputArea.parentElement.insertBefore(el, inputArea);
-            }
-            if (!typists.length) { el.style.opacity = '0'; el.textContent = ''; return; }
-            el.style.opacity = '1';
-            const names = typists.slice(0, 3).join(', ');
-            el.innerHTML = `
-      <span style="color:var(--indigo2);">${esc(names)}</span>
-      ${typists.length === 1 ? 'is' : 'are'} typing
-      <span style="display:inline-flex;gap:2px;margin-left:2px;vertical-align:middle;">
-        <span style="animation:bounce 1.2s infinite 0s;  display:inline-block;font-size:16px;line-height:0.8;">·</span>
-        <span style="animation:bounce 1.2s infinite 0.2s;display:inline-block;font-size:16px;line-height:0.8;">·</span>
-        <span style="animation:bounce 1.2s infinite 0.4s;display:inline-block;font-size:16px;line-height:0.8;">·</span>
-      </span>`;
-        }
-
-        // ─────────────────────────────────────
-        //  CODE EDITOR  (CodeMirror)
-        // ─────────────────────────────────────
+        // ─────────────────────────────────────────────
+        //  CODE EDITOR
+        // ─────────────────────────────────────────────
         function initEditor() {
             editorInstance = CodeMirror(document.getElementById('editor-container'), {
                 value: '// Welcome to StackRoom\n',
@@ -2658,26 +2637,14 @@
                     'Cmd-S': () => window.submitPR()
                 }
             });
-            loadFiles();
+
+            // Track unsaved changes
+            editorInstance.on('change', () => { editorDirty = true; });
         }
 
-        // ─────────────────────────────────────
+        // ─────────────────────────────────────────────
         //  FILE EXPLORER
-        // ─────────────────────────────────────
-        window.loadFiles = async () => {
-            try {
-                const token = await getToken();
-                const res = await fetch(`/api/rooms/${roomId}/files`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                if (!res.ok) throw new Error((await res.json()).error);
-                files = await res.json();
-                renderFileList();
-            } catch (err) {
-                console.error('loadFiles:', err.message);
-            }
-        };
-
+        // ─────────────────────────────────────────────
         function renderFileList() {
             const list = document.getElementById('file-list');
             if (!list) return;
@@ -2708,14 +2675,14 @@
                     background:${isActive ? 'var(--indigo3)' : 'transparent'};
                     color:${isActive ? 'var(--indigo2)' : 'var(--text)'};
                     transition:background 0.15s ease;"
-             onmouseover="if(this.style.background!=='var(--indigo3)')this.style.background='var(--bg3)'"
+             onmouseover="if('${f.id}'!=='${activeFileId}')this.style.background='var(--bg3)'"
              onmouseout="if('${f.id}'!=='${activeFileId}')this.style.background='transparent'">
           <i class="${icon}" style="font-size:11px;color:${isActive ? 'var(--indigo2)' : 'var(--muted2)'};flex-shrink:0;"></i>
           <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;">${esc(f.fileName)}</span>
           ${myRole === 'admin' ? `
             <button onclick="event.stopPropagation();window.deleteFile('${f.id}')"
               style="opacity:0;width:16px;height:16px;border:none;background:transparent;
-                     cursor:pointer;color:var(--muted2);font-size:10px;"
+                     cursor:pointer;color:var(--muted2);font-size:10px;padding:0;"
               onmouseover="this.style.opacity='1';this.style.color='#f87171'"
               onmouseout="this.style.opacity='0'"
               title="Delete file">
@@ -2729,6 +2696,7 @@
             const file = files.find(f => f.id === id);
             if (!file || !editorInstance) return;
             activeFileId = id;
+            editorDirty = false;
             editorInstance.setValue(file.content || '');
             editorInstance.setOption('mode', file.language || 'javascript');
             document.getElementById('file-name').value = file.fileName;
@@ -2751,13 +2719,14 @@
                                     trimmed.endsWith('.cpp') ? 'text/x-c++src' : 'javascript';
 
             activeFileId = null;
+            editorDirty = false;
             editorInstance.setValue(`// ${trimmed}\n`);
             editorInstance.setOption('mode', lang);
             document.getElementById('file-name').value = trimmed;
             document.getElementById('tab-code-name').textContent = trimmed;
             document.getElementById('lang-select').value = lang;
             renderFileList();
-            showToast(`New file: ${trimmed} — press Ctrl+S or submit PR to save.`, 'info');
+            showToast(`New file: ${trimmed} — press Ctrl+S to submit PR.`, 'info');
             editorInstance.focus();
         };
 
@@ -2766,29 +2735,26 @@
             try {
                 const token = await getToken();
                 const res = await fetch(`/api/rooms/${roomId}/files/${id}`, {
-                    method: 'DELETE',
-                    headers: { 'Authorization': `Bearer ${token}` }
+                    method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` }
                 });
                 if (!res.ok) throw new Error((await res.json()).error);
                 if (activeFileId === id) {
                     activeFileId = null;
+                    editorDirty = false;
                     editorInstance.setValue('');
                 }
                 showToast('File deleted.', 'success');
-                await loadFiles();
-            } catch (err) {
-                showToast(err.message, 'error');
-            }
+                // No need to call loadFiles() — subscribeFiles() handles it
+            } catch (err) { showToast(err.message, 'error'); }
         };
 
         window.onLangChange = () => {
-            const lang = document.getElementById('lang-select').value;
-            editorInstance?.setOption('mode', lang);
+            editorInstance?.setOption('mode', document.getElementById('lang-select').value);
         };
 
         window.onFileNameChange = () => {
-            const name = document.getElementById('file-name').value;
-            document.getElementById('tab-code-name').textContent = name || 'untitled';
+            document.getElementById('tab-code-name').textContent =
+                document.getElementById('file-name').value || 'untitled';
         };
 
         window.copyEditorCode = () => {
@@ -2796,9 +2762,9 @@
             showToast('Code copied!', 'success');
         };
 
-        // ─────────────────────────────────────
+        // ─────────────────────────────────────────────
         //  PULL REQUESTS
-        // ─────────────────────────────────────
+        // ─────────────────────────────────────────────
         window.submitPR = async () => {
             const code = editorInstance?.getValue() || '';
             const fileName = document.getElementById('file-name').value || 'untitled.js';
@@ -2819,36 +2785,20 @@
                 const data = await res.json();
                 if (!res.ok) throw new Error(data.error);
 
+                editorDirty = false;
                 showToast(
                     myRole === 'admin'
                         ? 'Saved directly (admin).'
                         : 'PR submitted — waiting for admin approval.',
                     'success'
                 );
-                await loadPRs();
-            } catch (err) {
-                showToast('PR failed: ' + err.message, 'error');
-            }
-        };
-
-        window.loadPRs = async () => {
-            try {
-                const token = await getToken();
-                const res = await fetch(`/api/rooms/${roomId}/prs`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                if (!res.ok) throw new Error((await res.json()).error);
-                prList = await res.json();
-                renderPRs();
-            } catch (err) {
-                console.error('loadPRs:', err.message);
-            }
+                // No need to call loadPRs() — subscribePRs() handles it
+            } catch (err) { showToast('PR failed: ' + err.message, 'error'); }
         };
 
         window.togglePR = () => {
             const panel = document.getElementById('pr-panel');
             panel.classList.toggle('open');
-            if (panel.classList.contains('open')) renderPRs();
         };
 
         function renderPRs() {
@@ -2857,7 +2807,7 @@
             if (!list) return;
 
             const pending = prList.filter(p => p.status === 'pending').length;
-            if (prCount) prCount.textContent = pending;
+            if (prCount) prCount.textContent = pending || '';
 
             if (!prList.length) {
                 list.innerHTML = `
@@ -2909,16 +2859,13 @@
                 });
                 if (!res.ok) throw new Error((await res.json()).error);
                 showToast(`PR ${action}d.`, action === 'approve' ? 'success' : 'error');
-                await loadPRs();
-                if (action === 'approve') await loadFiles(); // refresh file tree
-            } catch (err) {
-                showToast(err.message, 'error');
-            }
+                // No manual reload needed — subscribePRs() + subscribeFiles() handle updates
+            } catch (err) { showToast(err.message, 'error'); }
         };
 
-        // ─────────────────────────────────────
-        //  AI PANEL  (Personal AI with streaming)
-        // ─────────────────────────────────────
+        // ─────────────────────────────────────────────
+        //  AI PANEL  (personal, streaming)
+        // ─────────────────────────────────────────────
         window.sendAI = async () => {
             const inp = document.getElementById('ai-input');
             const text = inp.value.trim();
@@ -2953,7 +2900,7 @@
                     if (done) break;
                     buffer += decoder.decode(value, { stream: true });
                     const lines = buffer.split('\n');
-                    buffer = lines.pop(); // keep incomplete line
+                    buffer = lines.pop();
 
                     for (const line of lines) {
                         if (!line.startsWith('data: ')) continue;
@@ -2965,7 +2912,6 @@
                                 updateAIStreamBubble(bubbleId, fullText);
                             }
                             if (data.done) {
-                                // Use server-parsed HTML on done event
                                 finalizeAIBubble(bubbleId, data.html || marked.parse(fullText));
                                 aiHistory.push({ role: 'ai', text: fullText });
                             }
@@ -2988,7 +2934,8 @@
       <div class="ai-avatar ${isUser ? 'user' : 'ai-bot'}">
         ${isUser
                     ? (currentUser?.photoURL
-                        ? `<img src="${esc(currentUser.photoURL)}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;"
+                        ? `<img src="${esc(currentUser.photoURL)}"
+                    style="width:100%;height:100%;object-fit:cover;border-radius:50%;"
                     onerror="this.parentElement.textContent='${getInitials(currentUser?.displayName || '')}';">`
                         : getInitials(currentUser?.displayName || ''))
                     : '<i class="fa-solid fa-wand-magic-sparkles"></i>'}
@@ -2998,7 +2945,6 @@
             container.scrollTop = container.scrollHeight;
         }
 
-        // Shows typing dots while streaming
         function appendAIStreamBubble(id) {
             const container = document.getElementById('ai-messages');
             const div = document.createElement('div');
@@ -3012,23 +2958,19 @@
             container.scrollTop = container.scrollHeight;
         }
 
-        // Updates bubble live as chunks arrive (raw markdown)
         function updateAIStreamBubble(id, text) {
             const bubble = document.getElementById(id);
             if (!bubble) return;
             bubble.innerHTML = marked.parse(text) + '<span class="stream-cursor">▋</span>';
-            const container = document.getElementById('ai-messages');
-            container.scrollTop = container.scrollHeight;
+            document.getElementById('ai-messages').scrollTop = 99999;
         }
 
-        // Final render with highlighted code blocks — removes cursor
         function finalizeAIBubble(id, html) {
             const bubble = document.getElementById(id);
             if (!bubble) return;
             bubble.innerHTML = html;
             bubble.querySelectorAll('pre code').forEach(b => hljs.highlightElement(b));
-            const container = document.getElementById('ai-messages');
-            container.scrollTop = container.scrollHeight;
+            document.getElementById('ai-messages').scrollTop = 99999;
         }
 
         window.clearAIChat = () => {
@@ -3036,24 +2978,22 @@
             document.getElementById('ai-messages').innerHTML = `
       <div class="ai-msg ai">
         <div class="ai-avatar ai-bot"><i class="fa-solid fa-wand-magic-sparkles"></i></div>
-        <div class="ai-bubble"><p>Chat cleared! What can I help you with?</p></div>
+        <div class="ai-bubble"><p>Chat cleared. What can I help you with?</p></div>
       </div>`;
         };
 
         window.onAIKeydown = (e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                window.sendAI();
-            }
+            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); window.sendAI(); }
         };
 
-        // ─────────────────────────────────────
+        // ─────────────────────────────────────────────
         //  SIGN OUT
-        // ─────────────────────────────────────
+        // ─────────────────────────────────────────────
         window.doSignOut = async () => {
             if (unsubMessages) unsubMessages();
             if (unsubTyping) unsubTyping();
-            // Clear own typing on leave
+            if (unsubFiles) unsubFiles();
+            if (unsubPRs) unsubPRs();
             const token = await getToken();
             await fetch(`/api/rooms/${roomId}/typing`, {
                 method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` }
@@ -3062,9 +3002,9 @@
             window.location.href = '/auth/';
         };
 
-        // ─────────────────────────────────────
+        // ─────────────────────────────────────────────
         //  INIT ROOM
-        // ─────────────────────────────────────
+        // ─────────────────────────────────────────────
         async function initRoom(user) {
             currentUser = user;
             window.currentUser = user;
@@ -3076,8 +3016,6 @@
 
             try {
                 const token = await getToken();
-
-                // Fetch room data
                 const res = await fetch(`/api/rooms/${roomId}`, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
@@ -3087,34 +3025,28 @@
                 members = currentRoom.members || {};
                 myRole = members[user.uid]?.role || 'member';
 
-                // Update UI
                 document.getElementById('sidebar-room-name').textContent = currentRoom.name;
                 document.getElementById('sidebar-code').textContent = currentRoom.inviteCode;
                 document.getElementById('topbar-room').textContent = currentRoom.name;
                 document.title = `${currentRoom.name} — StackRoom`;
 
-                // Show admin actions
                 if (myRole === 'admin') {
                     document.getElementById('admin-actions').style.cssText = 'display:flex;';
                 }
 
                 renderMembers();
+                setLoaderMsg('Connecting...');
 
-                // Subscribe realtime
-                setLoaderMsg('Connecting to chat...');
+                // All four realtime listeners — nothing needs manual reload
                 subscribeMessages();
                 subscribeTyping();
+                subscribeFiles();   // ← replaces loadFiles()
+                subscribePRs();     // ← replaces loadPRs()
 
-                // Init editor
+                // Init editor (no loadFiles call inside — subscribeFiles handles it)
                 initEditor();
-
-                // Load PRs
-                await loadPRs();
-
-                // Default panel layout
                 applyPanels();
 
-                // Show app
                 document.getElementById('app').style.display = 'flex';
                 hideLoader();
 
@@ -3124,9 +3056,9 @@
             }
         }
 
-        // ─────────────────────────────────────
-        //  AUTH GUARD — always last
-        // ─────────────────────────────────────
+        // ─────────────────────────────────────────────
+        //  AUTH GUARD
+        // ─────────────────────────────────────────────
         onAuthStateChanged(auth, (user) => {
             if (!user) { window.location.href = '/auth/'; return; }
             initRoom(user);
@@ -3134,74 +3066,75 @@
 
     </script>
 
-<script>
-  // ─────────────────────────────────────
-  //  THEME
-  // ─────────────────────────────────────
-  let isDark = localStorage.getItem('theme') !== 'light';
 
-  function applyTheme(dark) {
-    isDark = dark;
-    const html = document.documentElement;
-    if (dark) {
-      html.classList.add('dark');
-      html.classList.remove('light');
-    } else {
-      html.classList.add('light');
-      html.classList.remove('dark');
-    }
-    localStorage.setItem('theme', dark ? 'dark' : 'light');
+    <script>
+        // ─────────────────────────────────────
+        //  THEME
+        // ─────────────────────────────────────
+        let isDark = localStorage.getItem('theme') !== 'light';
 
-    // Update CodeMirror theme if editor is open
-    const cm = document.querySelector('.CodeMirror')?.CodeMirror;
-    if (cm) cm.setOption('theme', dark ? 'dracula' : 'default');
-  }
+        function applyTheme(dark) {
+            isDark = dark;
+            const html = document.documentElement;
+            if (dark) {
+                html.classList.add('dark');
+                html.classList.remove('light');
+            } else {
+                html.classList.add('light');
+                html.classList.remove('dark');
+            }
+            localStorage.setItem('theme', dark ? 'dark' : 'light');
 
-  // Apply instantly on load — prevents flash
-  applyTheme(isDark);
+            // Update CodeMirror theme if editor is open
+            const cm = document.querySelector('.CodeMirror')?.CodeMirror;
+            if (cm) cm.setOption('theme', dark ? 'dracula' : 'default');
+        }
 
-  // Wire toggle — wait for DOM
-  document.addEventListener('DOMContentLoaded', () => {
-    const toggle = document.getElementById('theme-toggle');
-    if (toggle) toggle.onclick = () => applyTheme(!isDark);
-  });
+        // Apply instantly on load — prevents flash
+        applyTheme(isDark);
 
-  // ─────────────────────────────────────
-  //  CURSOR GLOW
-  // ─────────────────────────────────────
-  const glowEl = document.getElementById('cursor-glow');
-  if (glowEl) {
-    let mx = innerWidth / 2, my = innerHeight / 2;
-    let cx = mx, cy = my;
-    document.addEventListener('mousemove', e => { mx = e.clientX; my = e.clientY; });
-    (function loop() {
-      cx += (mx - cx) * 0.08;
-      cy += (my - cy) * 0.08;
-      glowEl.style.left = cx + 'px';
-      glowEl.style.top  = cy + 'px';
-      requestAnimationFrame(loop);
-    })();
-  }
+        // Wire toggle — wait for DOM
+        document.addEventListener('DOMContentLoaded', () => {
+            const toggle = document.getElementById('theme-toggle');
+            if (toggle) toggle.onclick = () => applyTheme(!isDark);
+        });
 
-  // ─────────────────────────────────────
-  //  CLOSE CTX MENU ON SCROLL
-  // ─────────────────────────────────────
-  document.addEventListener('scroll', () => {
-    document.getElementById('ctx-menu')?.classList.remove('show');
-  }, true);
+        // ─────────────────────────────────────
+        //  CURSOR GLOW
+        // ─────────────────────────────────────
+        const glowEl = document.getElementById('cursor-glow');
+        if (glowEl) {
+            let mx = innerWidth / 2, my = innerHeight / 2;
+            let cx = mx, cy = my;
+            document.addEventListener('mousemove', e => { mx = e.clientX; my = e.clientY; });
+            (function loop() {
+                cx += (mx - cx) * 0.08;
+                cy += (my - cy) * 0.08;
+                glowEl.style.left = cx + 'px';
+                glowEl.style.top = cy + 'px';
+                requestAnimationFrame(loop);
+            })();
+        }
 
-  // ─────────────────────────────────────
-  //  KEYBOARD SHORTCUTS
-  // ─────────────────────────────────────
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') {
-      document.querySelectorAll('.modal-overlay.open').forEach(m => {
-        m.classList.remove('open');
-      });
-      document.getElementById('ctx-menu')?.classList.remove('show');
-    }
-  });
-</script>
+        // ─────────────────────────────────────
+        //  CLOSE CTX MENU ON SCROLL
+        // ─────────────────────────────────────
+        document.addEventListener('scroll', () => {
+            document.getElementById('ctx-menu')?.classList.remove('show');
+        }, true);
+
+        // ─────────────────────────────────────
+        //  KEYBOARD SHORTCUTS
+        // ─────────────────────────────────────
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                document.querySelectorAll('.modal-overlay.open').forEach(m => {
+                    m.classList.remove('open');
+                });
+                document.getElementById('ctx-menu')?.classList.remove('show');
+            }
+        });
+    </script>
 
 </body>
 
