@@ -1,60 +1,98 @@
 # StackRoom
 
-> Real-time collaborative coding rooms with AI-powered bug resolution.
+A real-time collaborative coding platform. Chat, write code, review pull requests, and get AI help — all inside one room.
 
-![License](https://img.shields.io/badge/license-MIT-indigo)
-![Status](https://img.shields.io/badge/status-in%20development-yellow)
+---
 
-## What is StackRoom?
+## What's Inside
 
-StackRoom is an open-source, real-time collaborative coding environment where developers can chat, write code together, and get instant AI assistance — all in one place.
+- Room-based workspaces with invite codes
+- Real-time chat with @mentions, reply, edit, delete
+- @ai in chat gets an AI response visible to everyone
+- Personal AI assistant panel with streaming responses (Gemini 2.5 Flash)
+- VS Code-style code editor with a file explorer
+- Pull request system — edits go through admin approval before committing
+- Admin controls — change roles, remove members, approve/reject PRs
+- Typing indicators, syntax highlighted code blocks, markdown rendering
+- Dark/light theme, resizable panels, GSAP animations
 
-## Features
-
-- Real-time group chat rooms with roles & invite links
-- Collaborative code editor (multi-user, live sync)
-- AI assistant powered by Gemini — use `@ai` in chat
-- Smart code snippets with syntax highlighting & AI verdict
-- File attachments — images, PDFs, ZIPs, code files
-- Google & GitHub OAuth
+---
 
 ## Tech Stack
 
-- **Frontend** — HTML, Tailwind CSS, jQuery
-- **Backend** — Node.js, Express
-- **Database** — Firebase Firestore
-- **Auth** — Firebase Authentication (Google, GitHub)
-- **AI** — Google Gemini 1.5 Flash
-- **Editor** — CodeMirror 6
+| Layer | Tech |
+|---|---|
+| Frontend | HTML, Tailwind CSS |
+| Realtime | Firebase Firestore |
+| Auth | Firebase Authentication (Google OAuth) |
+| Backend | Node.js + Express |
+| AI | Google Gemini 2.5 Flash |
+| Editor | CodeMirror 5 |
+| Animations | GSAP 3 |
+
+---
 
 ## Getting Started
 
 ```bash
-# Clone the repo
-git clone https://github.com/yourrepo/stackroom.git
+git clone https://github.com/your-username/stackroom.git
 cd stackroom
-
-# Install dependencies
 npm install
-
-# Setup environment
 cp .env.example .env
-# Fill in your keys in .env
-
-# Run dev server
-npm run dev
+# add service-account.json to server/
+node server/index.js
+# open http://localhost:3000
 ```
 
-Open `http://localhost:3000`
+---
 
 ## Environment Variables
 
-See `.env.example` for all required variables.
+```env
+FIREBASE_API_KEY=
+FIREBASE_AUTH_DOMAIN=
+FIREBASE_PROJECT_ID=
+FIREBASE_STORAGE_BUCKET=
+FIREBASE_MESSAGING_SENDER_ID=
+FIREBASE_APP_ID=
+GEMINI_API_KEY=
+PORT=3000
+```
 
-## Contributing
+---
 
-Pull requests are welcome. For major changes, open an issue first.
+## Project Structure
 
-## License
+```
+stackroom/
+├── public/
+│   ├── auth/index.html       sign-in
+│   ├── lobby/index.html      create and join rooms
+│   └── chat/index.html       room workspace
+├── server/
+│   └── index.js              API, auth, AI routes
+├── .env
+└── package.json
+```
 
-[MIT](LICENSE)
+---
+
+## Roadmap
+
+- Voice and video rooms (Agora)
+- Live collaborative code editing
+- AI code review on pull requests
+- GitHub repo sync
+- Message reactions and search
+- File diff view on PR review
+- Mobile support
+
+---
+
+## Known Limitations
+
+- No live code sync yet — last save wins if two people edit at once
+- File tree is flat, no folders
+- Messages load last 100 only
+
+---
