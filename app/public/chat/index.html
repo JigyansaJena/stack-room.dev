@@ -2328,11 +2328,14 @@
             newEl.querySelectorAll('pre code').forEach(b => hljs.highlightElement(b));
         }
 
-        function scrollToBottom() {
+        function scrollToBottom(force = false) {
             const el = document.getElementById('messages');
-            const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
-            if (atBottom) el.scrollTop = el.scrollHeight;
+            const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 150;
+            if (force || atBottom) {
+                el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+            }
         }
+
 
         // ─────────────────────────────────────────────
         //  SUBSCRIBE MESSAGES
@@ -2345,12 +2348,16 @@
             );
             unsubMessages = onSnapshot(q, (snap) => {
                 snap.docChanges().forEach(change => {
-                    if (change.type === 'added') appendMessage({ id: change.doc.id, ...change.doc.data() });
+                    if (change.type === 'added') {
+                        appendMessage({ id: change.doc.id, ...change.doc.data() });
+                        const isOwn = change.doc.data().uid === currentUser?.uid;
+                        scrollToBottom(isOwn); // force scroll for own messages
+                    }
                     if (change.type === 'modified') updateMessageEl(change.doc.id, change.doc.data());
                     if (change.type === 'removed') document.getElementById(`msg-${change.doc.id}`)?.remove();
                 });
-                scrollToBottom();
             });
+
         }
 
         // ─────────────────────────────────────────────
